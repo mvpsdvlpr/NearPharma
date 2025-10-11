@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>BuscaFarmacia</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: Roboto, Arial, sans-serif; margin: 0; padding: 0; background: #f8f9fa; }
+    .container { max-width: 600px; margin: 2rem auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0001; padding: 2rem; }
+    h1 { text-align: center; color: #2c3e50; }
+    label { font-weight: bold; }
+    select, button { width: 100%; margin: 0.5rem 0; padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc; }
+    .farmacia-list { margin-top: 2rem; }
+    .farmacia-card { background: #f1f1f1; border-radius: 6px; padding: 1rem; margin-bottom: 1rem; }
+    .farmacia-card h3 { margin: 0 0 0.5rem 0; }
+    .tipo-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #28a745;
+      color: #fff;
+      border-radius: 20px;
+      padding: 4px 16px 4px 8px;
+      font-size: 1em;
+      font-weight: 500;
+      margin-top: 8px;
+    }
+    .tipo-pill img {
+      background: #fff;
+      border-radius: 50%;
+      padding: 2px;
+      width: 22px;
+      height: 22px;
+    }
+    .farmacia-logo { border-radius: 6px; background: #fff; padding: 2px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>BuscaFarmacia</h1>
+    <label for="tipo-farmacia">Tipo de farmacia</label>
+    <select id="tipo-farmacia"></select>
+    <label for="fecha" id="fecha-label" style="display:none;">Fecha de turno</label>
+    <select id="fecha" style="display:none;">
+      <option value="">Cargando...</option>
+    </select>
+    <label for="region">Región</label>
+    <select id="region">
+      <option value="">Cargando...</option>
+    </select>
+    <label for="comuna">Comuna</label>
+    <select id="comuna" disabled>
+      <option value="">Seleccione región primero</option>
+    </select>
+    <div class="farmacia-list" id="farmacia-list"></div>
+  </div>
+  <script>
+    const ENDPOINT = 'https://corsproxy.io/?https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
+
+    let filtro = 'turnos';
+    let fecha = '';
+    let comunasNombres = {};
+    let regionesNombres = {};
+    let iconosTipos = [];
+    let titulosTipos = [];
+    let ultimoLocales = [];
+    let userLat = null;
+    let userLng = null;
+
+    // Captura la ubicación del usuario al cargar la página
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          userLat = pos.coords.latitude;
+          userLng = pos.coords.longitude;
+          // Si ya hay farmacias cargadas, reordenar y mostrar
+          if (ultimoLocales.length) mostrarFarmacias(ultimoLocales);
+        },
+        err => {
+          userLat = null;
+          userLng = null;
+        }
+      );
+    }
+
+    // Cargar tipos de farmacia dinámicamente desde el backend
+    fetch(ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ func: 'iconos' })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.correcto) {
+        iconosTipos = data.iconos;
+        titulosTipos = data.titulos;
+        const tipoSelect = document.getElementById('tipo-farmacia');
+        tipoSelect.innerHTML = '';
+        data.iconos.forEach((icono, idx) => {
+          const opt = document.createElement('option');
+          opt.value = icono;
+          opt.textContent = data.titulos[idx];
+          tipoSelect.appendChild(opt);
+        });
+        // Selecciona el primero por defecto y dispara el evento
+        tipoSelect.value = data.iconos[0];
+        filtro = data.iconos[0];
+        if (filtro === 'turnos') {
+          document.getElementById('fecha').style.display = '';
+          document.getElementById('fecha-label').style.display = '';
+          cargarFechas();
+        } else {
+          document.getElementById('fecha').style.display = 'none';
+          document.getElementById('fecha-label').style.display = 'none';
+          fecha = '';
+          buscarFarmacias();
+        }
+      }
+    });
+
+    document.getElementById('tipo-farmacia').addEventListener('change', function() {
+      filtro = this.value;
+      if (filtro === 'turnos') {
+        document.getElementById('fecha').style.display = '';
+        document.getElementById('fecha-label').style.display = '';
+        cargarFechas();
+      } else {
+        document.getElementById('fecha').style.display = 'none';
+        document.getElementById('fecha-label').style.display = 'none';
+        fecha = '';
+        buscarFarmacias();
+      }
+    });
+
+    function cargarFechas() {
+      fetch(ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ func: 'fechas' })
+      })
+      .then(res => res.json())
+      .then(data => {
+        const fechaSel = document.getElementById('fecha');
+        fechaSel.innerHTML = '<option value="">Seleccione fecha</option>';
+        if (data.correcto) {
+          Object.entries(data.respuesta).forEach(([key, val]) => {
+            fechaSel.innerHTML += `<option value="${key}">${val}</option>`;
+          });
+        }
+        fechaSel.style.display = '';
+        document.getElementById('fecha-label').style.display = '';
+      });
+    }
+
+    document.getElementById('fecha').addEventListener('change', function() {
+      fecha = this.value;
+      buscarFarmacias();
+    });
+
+    fetch(ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ func: 'regiones' })
+    })
+    .then(res => res.json())
+    .then(data => {
+      const regionSel = document.getElementById('region');
+      regionSel.innerHTML = '<option value="">Seleccione región</option>';
+      if (data.correcto) {
+        data.respuesta.forEach(r => {
+          regionSel.innerHTML += `<option value="${r.id}" data-lat="${r.lat}" data-lng="${r.lng}">${r.nombre}</option>`;
+          regionesNombres[r.id] = r.nombre;
+        });
+      }
+    });
+
+    document.getElementById('region').addEventListener('change', function() {
+      const regionId = this.value;
+      const comunaSel = document.getElementById('comuna');
+      comunaSel.disabled = true;
+      comunaSel.innerHTML = '<option value="">Cargando...</option>';
+      if (!regionId) {
+        comunaSel.innerHTML = '<option value="">Seleccione región primero</option>';
+        return;
+      }
+      fetch(ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ func: 'comunas', region: regionId })
+      })
+      .then(res => res.json())
+      .then(data => {
+        comunaSel.innerHTML = '<option value="">Seleccione comuna</option>';
+        if (data.correcto) {
+          data.respuesta.forEach(c => {
+            comunaSel.innerHTML += `<option value="${c.id}" data-lat="${c.lat}" data-lng="${c.lng}">${c.nombre}</option>`;
+            comunasNombres[c.id] = c.nombre;
+          });
+          comunaSel.disabled = false;
+        }
+      });
+    });
+
+    document.getElementById('comuna').addEventListener('change', buscarFarmacias);
+
+    function buscarFarmacias() {
+      const regionId = document.getElementById('region').value;
+      const comunaId = document.getElementById('comuna').value;
+      if (!regionId || !comunaId || (filtro === 'turnos' && !fecha)) return;
+      fetch(ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          func: 'region',
+          filtro: filtro,
+          fecha: filtro === 'turnos' ? fecha : '',
+          region: regionId,
+          hora: new Date().toLocaleTimeString('es-CL', { hour12: false })
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        mostrarFarmacias(data.respuesta.locales || []);
+      });
+    }
+
+    // Utilidad para obtener lat/lng de cualquier farmacia
+    function getLatLng(local) {
+      const lat = local.lat !== undefined ? local.lat : local.lt;
+      const lng = local.lng !== undefined ? local.lng : local.lg;
+      return { lat: parseFloat(lat), lng: parseFloat(lng) };
+    }
+
+    function distancia(lat1, lng1, lat2, lng2) {
+      function toRad(x) { return x * Math.PI / 180; }
+      const R = 6371;
+      const dLat = toRad(lat2 - lat1);
+      const dLng = toRad(lng2 - lng1);
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                Math.sin(dLng/2) * Math.sin(dLng/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
+
+    function mostrarFarmacias(locales) {
+      ultimoLocales = locales;
+      const list = document.getElementById('farmacia-list');
+      if (!locales.length) {
+        list.innerHTML = '<div>No se encontraron farmacias.</div>';
+        return;
+      }
+      list.innerHTML = '';
+
+      // Ordenar por distancia si tenemos ubicación
+      if (userLat !== null && userLng !== null) {
+        locales = locales.slice().sort((a, b) => {
+          const aCoords = getLatLng(a);
+          const bCoords = getLatLng(b);
+          if (isNaN(aCoords.lat) || isNaN(aCoords.lng)) return 1;
+          if (isNaN(bCoords.lat) || isNaN(bCoords.lng)) return -1;
+          const da = distancia(userLat, userLng, aCoords.lat, aCoords.lng);
+          const db = distancia(userLat, userLng, bCoords.lat, bCoords.lng);
+          return da - db;
+        });
+      }
+
+      locales.forEach(local => {
+        const tipoFarmacia = local.tp;
+        fetch(ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            func: 'local',
+            im: local.im,
+            fecha: fecha
+          })
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.correcto && data.respuesta && data.respuesta.local) {
+            const f = data.respuesta.local;
+            const horario = data.respuesta.horario || {};
+            const tipoIdx = Number(tipoFarmacia);
+            const tipo = iconosTipos[tipoIdx] || '';
+            const tipoNombre = titulosTipos[tipoIdx] || '';
+            const comuna = comunasNombres[f.cm] || '';
+            const region = regionesNombres[f.rg] || '';
+            const logo = f.img
+              ? `https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php?imagen=${f.img}`
+              : 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/img/logo.svg';
+            const card = document.createElement('div');
+            card.className = 'farmacia-card';
+            card.innerHTML = `
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                  <h3>${f.nm || ''}</h3>
+                  ${horario.turno ? `<hr><label><b>Fecha Turno</b></label><br>${horario.turno}<hr>` : ''}
+                </div>
+                <div><img src="${logo}" class="farmacia-logo" width="50"></div>
+              </div>
+              <div>
+                <label><b>Horario Semanal</b></label><br>${horario.semana || 'No disponible'}<br>
+                <label><b>Dirección</b></label><br>
+                ${f.dr || ''},<br>${comuna}, ${region}.<br>
+                <img src="https://seremienlinea.minsal.cl/asdigital/mfarmacias/img/map.svg" width="15">&nbsp;
+                <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((f.dr || '') + ', ' + comuna + ', ' + region)}" target="_blank">¿Cómo llegar?</a><br>
+                ${f.tl ? `<label><b>Teléfono</b></label><br><a href="tel:${f.tl}">${f.tl}</a>` : ''}
+              </div>
+              <div style="margin-top:12px;display:flex;justify-content:flex-end;">
+                <span class="tipo-pill">
+                  <img src="https://seremienlinea.minsal.cl/asdigital/mfarmacias/img/i${tipo}b.png" alt="" />
+                  ${tipoNombre}
+                </span>
+              </div>
+            `;
+            list.appendChild(card);
+          } else {
+            const card = document.createElement('div');
+            card.className = 'farmacia-card';
+            card.innerHTML = '<div>No se pudo cargar la información.</div>';
+            list.appendChild(card);
+          }
+        })
+        .catch(() => {
+          const card = document.createElement('div');
+          card.className = 'farmacia-card';
+          card.innerHTML = '<div>No se pudo cargar la información.</div>';
+          list.appendChild(card);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
