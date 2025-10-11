@@ -16,7 +16,7 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
   router.get('/regions', async (req: Request, res: Response) => {
     console.log('[API] GET /api/regions');
     try {
-      const API_BASE = process.env.FARMANET_API_URL || 'https://farmanet.minsal.cl/maps/index.php/ws/getLocalesRegion';
+  const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
       const regionesSet = new Set();
       for (let region = 1; region <= 16; region++) {
         try {
@@ -50,7 +50,7 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
     const regionId = req.query.region;
     console.log(`[API] GET /api/communes?region=${regionId}`);
     try {
-      const API_BASE = process.env.FARMANET_API_URL || 'https://farmanet.minsal.cl/maps/index.php/ws/getLocalesRegion';
+  const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
       const response = await axios.get(`${API_BASE}/${regionId}`);
       const data = response.data;
       const comunasSet = new Set();
@@ -86,7 +86,7 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
   }
 
   // Chilean Ministry of Health API base URL
-  // const API_BASE = process.env.FARMANET_API_URL || 'https://farmanet.minsal.cl/maps/index.php/ws/getLocalesRegion';
+  // const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
 
   // GET /api/pharmacies?region=...&comuna=...&tipo=...
   router.get('/pharmacies',
