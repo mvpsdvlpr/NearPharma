@@ -2,6 +2,14 @@ name: Deploy backend to Vercel
 
 on:
   push:
+    # Keep deploying from main, and also run on feature branch pushes so preview
+    # deploys can be created without merging to main.
+    branches: [ main, 'feature/**' ]
+    paths:
+      - 'backend/**'
+  pull_request:
+    # Run for PRs targeting main so the deploy job can validate the backend changes
+    # during review (matches Flutter tests behavior).
     branches: [ main ]
     paths:
       - 'backend/**'
