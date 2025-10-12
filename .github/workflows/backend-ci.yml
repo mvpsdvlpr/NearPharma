@@ -46,6 +46,20 @@ jobs:
         run: |
           if npm test --silent; then echo "Tests passed"; else echo "Tests failed"; exit 1; fi
 
+      - name: Audit dependencies (npm audit)
+        working-directory: backend
+        run: |
+          echo "Running npm audit (report saved to audit.json)"
+          npm audit --json > audit.json || true
+        continue-on-error: false
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: backend/audit.json
+
       - name: Upload build artifact
         if: success()
         uses: actions/upload-artifact@v4
