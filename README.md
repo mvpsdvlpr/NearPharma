@@ -1,3 +1,25 @@
+# NearPharma
+
+NearPharma is a small mobile app to find nearby pharmacies and open navigation to them.
+
+Features:
+- Search pharmacies by region/comuna and turno
+- Sort results by proximity to the device
+- Safe image handling for SVG and raster images
+
+Development
+------------
+The mobile app is under the `mobile/` folder. To run tests locally:
+
+```bash
+cd mobile
+flutter pub get
+flutter test
+```
+
+CI
+--
+There is a GitHub Actions workflow to run tests on pushes and pull requests.
 # BuscaFarmacia
 
 BuscaFarmacia is an application designed to help users find pharmacies in their vicinity. This project aims to provide a user-friendly interface and efficient search capabilities.
