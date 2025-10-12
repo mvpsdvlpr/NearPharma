@@ -193,7 +193,7 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
         const { region, comuna, tipo, lat, lng } = req.query as any;
         const cacheKey = `pharmacies:${region}:${comuna || ''}:${tipo || ''}`;
         let result;
-        const cached = cache.get(cacheKey);
+        const cached = await cache.get(cacheKey);
         if (cached) {
           result = cached;
         } else {
@@ -228,7 +228,7 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
               result = result.filter((item: any) => item.local_tipo?.toLowerCase() === String(tipo).toLowerCase());
             }
             if (Array.isArray(result) && result.length > 0) {
-              cache.set(cacheKey, result, CACHE_TTL);
+              await cache.set(cacheKey, result, CACHE_TTL);
             }
           } catch (err) {
             console.error('[API][pharmacies] Error al consultar Farmanet:', err);

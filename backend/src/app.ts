@@ -9,6 +9,9 @@ import { sanitizeInputs } from './middleware/security';
 
 const app = express();
 
+// Trust proxy (required when behind Vercel/Proxies so express-rate-limit can identify IPs)
+app.set('trust proxy', 1);
+
 // Security HTTP headers
 app.use(helmet());
 
@@ -52,6 +55,16 @@ const _allowDebug = (process.env.NODE_ENV || '').toLowerCase() !== 'production' 
 if (_allowDebug) {
   app.get('/mfarmacias/debug/ping', (req: Request, res: Response) => {
     res.json({ ok: true, now: new Date().toISOString(), env: process.env.NODE_ENV || 'dev' });
+  });
+  app.get('/mfarmacias/debug/cache-metrics', (req: Request, res: Response) => {
+    try {
+      const router: any = apiRouter as any;
+      const cache: any = router._cache;
+      if (!cache) return res.status(404).json({ ok: false, error: 'No cache exposed' });
+      return res.json({ ok: true, metrics: cache.getMetrics ? cache.getMetrics() : null });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e) });
+    }
   });
   app.get('/mfarmacias/debug/farmanet', async (req: Request, res: Response) => {
   const func = String(req.query.func || 'locales_regiones');

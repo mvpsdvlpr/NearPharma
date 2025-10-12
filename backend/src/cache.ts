@@ -4,26 +4,53 @@ export interface CacheEntry<T> {
   expires: number;
 }
 
+import { isUpstashConfigured, redisGetJSON, redisSetJSON, redisDel } from './lib/redis';
+
 class Cache<T> {
   private store = new Map<string, CacheEntry<T>>();
+  private hits = 0;
+  private misses = 0;
 
-  set(key: string, value: T, ttlMs: number) {
+  // set supports ttl in milliseconds (for in-memory) and seconds for Redis
+  async set(key: string, value: T, ttlMs: number) {
     const expires = Date.now() + ttlMs;
+    // local memo
     this.store.set(key, { value, expires });
-  }
-
-  get(key: string): T | undefined {
-    const entry = this.store.get(key);
-    if (!entry) return undefined;
-    if (Date.now() > entry.expires) {
-      this.store.delete(key);
-      return undefined;
+    // remote cache if configured (Upstash expects seconds)
+    if (isUpstashConfigured()) {
+      const ttlSec = Math.round(ttlMs / 1000);
+      try { await redisSetJSON(key, value, ttlSec); } catch (e) { /* swallow */ }
     }
-    return entry.value;
   }
 
-  delete(key: string) {
+  async get(key: string): Promise<T | undefined> {
+    // check local first
+    const entry = this.store.get(key);
+    if (entry && Date.now() <= entry.expires) return entry.value;
+    // local miss
+    this.misses++;
+    // if upstash configured, try remote
+    if (isUpstashConfigured()) {
+      try {
+        const remote = await redisGetJSON<T>(key);
+        if (remote !== null) return remote;
+      } catch (e) { /* swallow */ }
+    }
+    // fallback undefined
+    return undefined;
+    // ultimate miss
+    return undefined;
+  }
+
+  async delete(key: string) {
     this.store.delete(key);
+    if (isUpstashConfigured()) {
+      try { await redisDel(key); } catch (e) { /* swallow */ }
+    }
+  }
+
+  getMetrics() {
+    return { hits: this.hits, misses: this.misses };
   }
 
   clear() {
