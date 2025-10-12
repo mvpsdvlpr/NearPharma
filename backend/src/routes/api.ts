@@ -1,80 +1,111 @@
-// Handler para compatibilidad POST /mfarmacias/mapa.php
-export async function handleMapaPhpCompat(req: Request, res: Response) {
-  const func = req.body.func || req.query.func;
-  const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
+import express, { Request, Response, NextFunction, Router } from 'express';
+import axios from 'axios';
+import { query, validationResult } from 'express-validator';
+import Cache from '../cache';
+
+// Configuration and constants
+const FARMANET_API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
+const FARMANET_TIMEOUT = Number(process.env.FARMANET_TIMEOUT_MS) || 7000;
+const FARMANET_PREVIEW_LENGTH = 2000;
+
+function getCommonHeaders() {
+  return {
+    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.66 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'es-CL,es;q=0.9,en;q=0.8',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Referer': 'https://seremienlinea.minsal.cl/'
+  };
+}
+
+async function preflightGetCookies(apiBase: string, timeout = FARMANET_TIMEOUT): Promise<string> {
   try {
+    const pre = await axios.get(apiBase, { headers: getCommonHeaders(), timeout });
+    const setCookies = pre.headers && (pre.headers as any)['set-cookie'];
+    if (Array.isArray(setCookies) && setCookies.length > 0) {
+      return setCookies.map((c: string) => c.split(';')[0]).join('; ');
+    }
+  } catch (e) {
+    // Not fatal; caller can try POST without cookies
+    console.log('[API][preflight] GET failed:', String(e).slice(0, 200));
+  }
+  return '';
+}
+
+/**
+ * Post to Farmanet and return parsed data when possible.
+ * Always requests arraybuffer so we can safely detect HTML vs JSON.
+ */
+async function postToFarmanet(params: URLSearchParams, apiBase = FARMANET_API_BASE, cookieHeader = '', timeout = FARMANET_TIMEOUT) {
+  const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded', ...(getCommonHeaders() as any) };
+  if (cookieHeader) headers.Cookie = cookieHeader;
+  const response = await axios.post(apiBase, params, { headers, timeout, responseType: 'arraybuffer' });
+  const buf = Buffer.from(response.data || '');
+  const preview = buf.toString('utf8', 0, Math.min(buf.length, FARMANET_PREVIEW_LENGTH));
+  // Try parse JSON safely
+  try {
+    const parsed = JSON.parse(preview);
+    return { status: response.status, headers: response.headers, data: parsed, preview, isJson: true };
+  } catch (_) {
+    // If it's not JSON, return raw preview and full buffer as fallback
+    return { status: response.status, headers: response.headers, data: preview, preview, isJson: false };
+  }
+}
+
+// Handler para compatibilidad POST /mfarmacias/mapa.php
+export async function handleFarmanetCompat(req: Request, res: Response) {
+  const func = req.body.func || req.query.func;
+  try {
+    if (!func) return res.status(400).json({ correcto: false, error: 'Missing func parameter' });
+    // Short-circuit for simple funcs that don't need cookie preflight in many cases
     if (func === 'iconos') {
-      // Obtener respuesta real desde la API oficial
-      const response = await axios.post(API_BASE, new URLSearchParams({ func: 'iconos' }), {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      });
-      // Farmanet responde { correcto: true, respuesta: { ... } }
-      if (response.data && response.data.correcto === true && response.data.respuesta) {
-        return res.json(response.data);
+      const params = new URLSearchParams({ func: 'iconos' });
+      const resRaw = await axios.post(FARMANET_API_BASE, params, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: FARMANET_TIMEOUT });
+      const data = resRaw.data;
+      if (data && (data as any).correcto === true && (data as any).respuesta) {
+        return res.json(data);
       }
-      // Si la API responde plano, envolver en la estructura correcta
-      return res.json({ correcto: true, respuesta: response.data });
+      return res.json({ correcto: true, respuesta: data });
     }
-    if (func === 'regiones') {
-      const response = await axios.post(API_BASE, new URLSearchParams({ func: 'regiones' }), {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      });
-      return res.json(response.data);
-    }
+
+    // For other funcs, use preflight + unified post wrapper
+    const apiBase = FARMANET_API_BASE;
+    const cookieHeader = await preflightGetCookies(apiBase);
+    const params = new URLSearchParams({ func: String(func) });
+    // append additional params if provided
+    const allowed = ['regiones', 'comunas', 'fechas', 'region', 'local', 'sector'];
+    if (!allowed.includes(String(func))) return res.status(400).json({ correcto: false, error: 'Func no soportado' });
+    // Map extra params
     if (func === 'comunas') {
       const region = req.body.region || req.query.region;
-      const params = new URLSearchParams({ func: 'comunas' });
-      if (region) params.append('region', region);
-      const response = await axios.post(API_BASE, params, {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      });
-      return res.json(response.data);
-    }
-    if (func === 'fechas') {
-      const response = await axios.post(API_BASE, new URLSearchParams({ func: 'fechas' }), {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      });
-      return res.json(response.data);
+      if (region) params.append('region', String(region));
     }
     if (func === 'region') {
-      const region = req.body.region || req.query.region;
+      const region = req.body.region || req.query.region || '';
       const filtro = req.body.filtro || req.query.filtro;
       const fecha = req.body.fecha || req.query.fecha;
       const hora = req.body.hora || req.query.hora;
-      const params = new URLSearchParams({ func: 'region', region: region || '' });
-      if (filtro) params.append('filtro', filtro);
-      if (fecha) params.append('fecha', fecha);
-      if (hora) params.append('hora', hora);
-      const response = await axios.post(API_BASE, params, {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      });
-      return res.json(response.data);
+      params.set('region', String(region));
+      if (filtro) params.append('filtro', String(filtro));
+      if (fecha) params.append('fecha', String(fecha));
+      if (hora) params.append('hora', String(hora));
     }
     if (func === 'local') {
-      const im = req.body.im || req.query.im;
+      const im = req.body.im || req.query.im || '';
       const fecha = req.body.fecha || req.query.fecha;
-      const params = new URLSearchParams({ func: 'local', im: im || '' });
-      if (fecha) params.append('fecha', fecha);
-      const response = await axios.post(API_BASE, params, {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      });
-      return res.json(response.data);
+      params.set('im', String(im));
+      if (fecha) params.append('fecha', String(fecha));
     }
-    if (func === 'sector') {
-      // Simular sector (no implementado)
-      return res.json({ correcto: true, respuesta: { locales: [] } });
-    }
-    return res.status(400).json({ correcto: false, error: 'Func no soportado' });
+
+    const result = await postToFarmanet(params, apiBase, cookieHeader);
+    // If Farmanet returned JSON, return it; otherwise return a helpful error with preview
+    if (result.isJson) return res.json(result.data);
+    return res.status(502).json({ correcto: false, error: 'Upstream returned non-JSON response', preview: String(result.preview).slice(0, 1000) });
   } catch (err) {
     return res.status(500).json({ correcto: false, error: String(err) });
   }
 }
 
-
-import express, { Request, Response, NextFunction, Router } from 'express';
-import axios from 'axios';
-import { query, validationResult } from 'express-validator';
-import Cache from '../cache';
 
 // Permite inyectar cache para testing
 export function createApiRouter(cacheInstance?: Cache<any>): Router {
@@ -87,39 +118,12 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
   router.get('/regions', async (req: Request, res: Response) => {
     console.log('[API] GET /api/regions');
     try {
-      const commonHeaders = {
-        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.66 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'es-CL,es;q=0.9,en;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Referer': 'https://seremienlinea.minsal.cl/'
-      };
-      const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
-      // La API oficial responde mejor a POST form-encoded; usar POST para compatibilidad
-      // Cloudflare/remote site may require cookies; do a preflight GET and forward Set-Cookie as Cookie
-      let cookieHeader = '';
-      try {
-        const commonHeaders = {
-          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.66 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-          'Accept-Language': 'es-CL,es;q=0.9,en;q=0.8',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Referer': 'https://seremienlinea.minsal.cl/'
-        };
-        const pre = await axios.get(API_BASE, { headers: commonHeaders, timeout: 7000 });
-        const setCookies = pre.headers && pre.headers['set-cookie'];
-        if (Array.isArray(setCookies) && setCookies.length > 0) {
-          cookieHeader = setCookies.map((c: string) => c.split(';')[0]).join('; ');
-        }
-      } catch (e) {
-        console.log('[API][regions] preflight GET failed:', String(e).slice(0, 200));
-      }
+      const apiBase = FARMANET_API_BASE;
+      const cookieHeader = await preflightGetCookies(apiBase);
       const params = new URLSearchParams({ func: 'locales_regiones' });
-  const response = await axios.post(API_BASE, params, { headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...(commonHeaders as any), ...(cookieHeader ? { Cookie: cookieHeader } : {}) }, timeout: 7000 });
-      // Mejor logging para diagnóstico remoto
+      const response = await postToFarmanet(params, apiBase, cookieHeader);
       console.log(`[API][regions] farmanet status=${response.status}`);
       const data = response.data;
-      // Se espera un array de regiones
       const regiones = Array.isArray(data)
         ? data.map((item: any) => ({ id: item.region_id, nombre: item.region_nombre }))
         : [];
@@ -139,38 +143,14 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
       return res.status(400).json({ errors: errors.array() });
     }
     const regionId = req.query.region;
-    const commonHeaders = {
-      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.66 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-      'Accept-Language': 'es-CL,es;q=0.9,en;q=0.8',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Referer': 'https://seremienlinea.minsal.cl/'
-    };
     console.log(`[API] GET /api/communes?region=${regionId}`);
-  try {
-  const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
-  // Usar POST form-encoded para locales_comunas
-  const params = new URLSearchParams({ func: 'locales_comunas', region: String(regionId) });
-      let cookieHeader = '';
-      try {
-        const commonHeaders = {
-          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.66 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-          'Accept-Language': 'es-CL,es;q=0.9,en;q=0.8',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Referer': 'https://seremienlinea.minsal.cl/'
-        };
-        const pre = await axios.get(API_BASE, { headers: commonHeaders, timeout: 7000 });
-        const setCookies = pre.headers && pre.headers['set-cookie'];
-        if (Array.isArray(setCookies) && setCookies.length > 0) {
-          cookieHeader = setCookies.map((c: string) => c.split(';')[0]).join('; ');
-        }
-      } catch (e) {
-        console.log('[API][communes] preflight GET failed region=' + regionId + ' ' + String(e).slice(0, 200));
-      }
-  const response = await axios.post(API_BASE, params, { headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...(commonHeaders as any), ...(cookieHeader ? { Cookie: cookieHeader } : {}) }, timeout: 7000 });
-  console.log(`[API][communes] farmanet status=${response.status} region=${regionId}`);
-  const data = response.data;
+    try {
+      const apiBase = FARMANET_API_BASE;
+      const params = new URLSearchParams({ func: 'locales_comunas', region: String(regionId) });
+      const cookieHeader = await preflightGetCookies(apiBase);
+      const response = await postToFarmanet(params, apiBase, cookieHeader);
+      console.log(`[API][communes] farmanet status=${response.status} region=${regionId}`);
+      const data = response.data;
       const comunas = Array.isArray(data)
         ? data.map((item: any) => ({ id: String(item.comuna_nombre).toLowerCase().replace(/ /g, '-'), nombre: item.comuna_nombre }))
         : [];
@@ -181,7 +161,6 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
     }
   });
 
-// ...existing code...
   // Haversine distance in km
   function distance(lat1: number, lng1: number, lat2: number, lng2: number): number {
     if ([lat1, lng1, lat2, lng2].some(v => isNaN(v))) return Number.POSITIVE_INFINITY;
@@ -195,9 +174,6 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   }
-
-  // Chilean Ministry of Health API base URL
-  // const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
 
   // GET /api/pharmacies?region=...&comuna=...&tipo=...
   router.get('/pharmacies',
@@ -214,68 +190,42 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
         if (!errors.isEmpty()) {
           return res.status(400).json({ errors: errors.array() });
         }
-        const { region, comuna, tipo, lat, lng } = req.query;
-        const commonHeaders = {
-          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.66 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-          'Accept-Language': 'es-CL,es;q=0.9,en;q=0.8',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Referer': 'https://seremienlinea.minsal.cl/'
-        };
+        const { region, comuna, tipo, lat, lng } = req.query as any;
         const cacheKey = `pharmacies:${region}:${comuna || ''}:${tipo || ''}`;
         let result;
         const cached = cache.get(cacheKey);
-        const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
         if (cached) {
           result = cached;
         } else {
-          let data;
-            try {
-            // Usar POST form-encoded para locales_farmacias
+          try {
+            const apiBase = FARMANET_API_BASE;
             const params = new URLSearchParams({ func: 'locales_farmacias', region: String(region) });
-            let cookieHeader = '';
-            try {
-              const commonHeaders = {
-                'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.66 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                'Accept-Language': 'es-CL,es;q=0.9,en;q=0.8',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Referer': 'https://seremienlinea.minsal.cl/'
-              };
-              const pre = await axios.get(API_BASE, { headers: commonHeaders, timeout: 7000 });
-              const setCookies = pre.headers && pre.headers['set-cookie'];
-              if (Array.isArray(setCookies) && setCookies.length > 0) {
-                cookieHeader = setCookies.map((c: string) => c.split(';')[0]).join('; ');
-              }
-            } catch (e) {
-              console.log('[API][pharmacies] preflight GET failed region=' + region + ' ' + String(e).slice(0, 200));
-            }
-            const response = await axios.post(API_BASE, params, { headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...(commonHeaders as any), ...(cookieHeader ? { Cookie: cookieHeader } : {}) }, timeout: 7000 });
-            data = response.data;
-            // Log de la respuesta cruda de la API oficial (parcial, para evitar logs enormes)
+            const cookieHeader = await preflightGetCookies(apiBase);
+            const response = await postToFarmanet(params, apiBase, cookieHeader);
+            const data = response.data;
             try {
               const preview = typeof data === 'string' ? data.slice(0, 1000) : JSON.stringify(Array.isArray(data) ? data.slice(0, 10) : data).slice(0, 1000);
               console.log('[API][pharmacies] farmanet status=' + response.status + ' preview=' + preview);
             } catch (e) {
               console.log('[API][pharmacies] farmanet status=' + response.status + ' (could not stringify preview)');
             }
+            if (!Array.isArray(data)) {
+              console.error('[API][pharmacies] La respuesta NO es un array:', data);
+              return res.status(500).json({ error: 'Invalid data from API', raw: String(response.preview).slice(0, 1000) });
+            }
+            result = data;
+            if (comuna) {
+              result = result.filter((item: any) => item.comuna_nombre?.toLowerCase() === String(comuna).toLowerCase());
+            }
+            if (tipo) {
+              result = result.filter((item: any) => item.local_tipo?.toLowerCase() === String(tipo).toLowerCase());
+            }
+            if (Array.isArray(result) && result.length > 0) {
+              cache.set(cacheKey, result, CACHE_TTL);
+            }
           } catch (err) {
             console.error('[API][pharmacies] Error al consultar Farmanet:', err);
             return res.status(500).json({ error: 'External API error' });
-          }
-          if (!Array.isArray(data)) {
-            console.error('[API][pharmacies] La respuesta NO es un array:', data);
-            return res.status(500).json({ error: 'Invalid data from API', raw: data });
-          }
-          result = data;
-          if (comuna) {
-            result = result.filter((item: any) => item.comuna_nombre?.toLowerCase() === String(comuna).toLowerCase());
-          }
-          if (tipo) {
-            result = result.filter((item: any) => item.local_tipo?.toLowerCase() === String(tipo).toLowerCase());
-          }
-          if (Array.isArray(result) && result.length > 0) {
-            cache.set(cacheKey, result, CACHE_TTL);
           }
         }
         if (lat !== undefined && lng !== undefined && !isNaN(Number(lat)) && !isNaN(Number(lng))) {
@@ -298,51 +248,18 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
   const _allowDebug = (process.env.NODE_ENV || '').toLowerCase() !== 'production' || process.env.ALLOW_DEBUG === 'true';
   if (_allowDebug) {
     router.get('/debug/farmanet', async (req: Request, res: Response) => {
-    const commonHeaders = {
-      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'es-CL,es;q=0.9',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Referer': 'https://seremienlinea.minsal.cl/'
-    };
-    const func = String(req.query.func || 'locales_regiones');
-    const region = req.query.region as string | undefined;
-    const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
-    try {
-      // Preflight GET to obtain cookies/challenges
-      let cookieHeader = '';
+      const func = String(req.query.func || 'locales_regiones');
+      const region = req.query.region as string | undefined;
+      const apiBase = FARMANET_API_BASE;
       try {
-        const commonHeaders = {
-          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'es-CL,es;q=0.9',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Referer': 'https://seremienlinea.minsal.cl/'
-        };
-        const pre = await axios.get(API_BASE, { headers: commonHeaders, timeout: 8000 });
-        const setCookies = pre.headers && pre.headers['set-cookie'];
-        if (Array.isArray(setCookies) && setCookies.length > 0) {
-          cookieHeader = setCookies.map((c: string) => c.split(';')[0]).join('; ');
-        }
-      } catch (e) {
-        // continue, we'll attempt POST anyway
+        const cookieHeader = await preflightGetCookies(apiBase, 8000);
+        const params = new URLSearchParams({ func });
+        if (region) params.append('region', region);
+        const response = await postToFarmanet(params, apiBase, cookieHeader, 10000);
+        return res.json({ ok: true, status: response.status, headers: response.headers, preview: String(response.preview).slice(0, 2000), isJson: response.isJson });
+      } catch (err) {
+        return res.status(500).json({ ok: false, error: String(err).slice(0, 1000) });
       }
-
-      const params = new URLSearchParams({ func });
-      if (region) params.append('region', region);
-  const response = await axios.post(API_BASE, params, { headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...(commonHeaders as any), ...(cookieHeader ? { Cookie: cookieHeader } : {}) }, timeout: 10000, responseType: 'arraybuffer' });
-
-      // Build a safe preview string
-      const buf = Buffer.from(response.data || '');
-      const preview = buf.toString('utf8', 0, Math.min(buf.length, 5000));
-      const isJson = (() => {
-        try { JSON.parse(preview); return true; } catch { return false; }
-      })();
-
-      return res.json({ ok: true, status: response.status, headers: response.headers, preview: preview.slice(0, 2000), isJson });
-    } catch (err) {
-      return res.status(500).json({ ok: false, error: String(err).slice(0, 1000) });
-    }
     });
     // Simple health endpoint for debugging mounting/routing
     router.get('/debug/ping', (req: Request, res: Response) => {
