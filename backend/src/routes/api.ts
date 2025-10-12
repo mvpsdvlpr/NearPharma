@@ -89,8 +89,19 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
     try {
       const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
       // La API oficial responde mejor a POST form-encoded; usar POST para compatibilidad
+      // Cloudflare/remote site may require cookies; do a preflight GET and forward Set-Cookie as Cookie
+      let cookieHeader = '';
+      try {
+        const pre = await axios.get(API_BASE, { headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.66 Safari/537.36' }, timeout: 7000 });
+        const setCookies = pre.headers && pre.headers['set-cookie'];
+        if (Array.isArray(setCookies) && setCookies.length > 0) {
+          cookieHeader = setCookies.map((c: string) => c.split(';')[0]).join('; ');
+        }
+      } catch (e) {
+        console.log('[API][regions] preflight GET failed:', String(e).slice(0, 200));
+      }
       const params = new URLSearchParams({ func: 'locales_regiones' });
-      const response = await axios.post(API_BASE, params, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 7000 });
+      const response = await axios.post(API_BASE, params, { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.66 Safari/537.36', ...(cookieHeader ? { Cookie: cookieHeader } : {}) }, timeout: 7000 });
       // Mejor logging para diagnóstico remoto
       console.log(`[API][regions] farmanet status=${response.status}`);
       const data = response.data;
@@ -119,7 +130,17 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
   const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
   // Usar POST form-encoded para locales_comunas
   const params = new URLSearchParams({ func: 'locales_comunas', region: String(regionId) });
-  const response = await axios.post(API_BASE, params, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 7000 });
+      let cookieHeader = '';
+      try {
+        const pre = await axios.get(API_BASE, { headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.66 Safari/537.36' }, timeout: 7000 });
+        const setCookies = pre.headers && pre.headers['set-cookie'];
+        if (Array.isArray(setCookies) && setCookies.length > 0) {
+          cookieHeader = setCookies.map((c: string) => c.split(';')[0]).join('; ');
+        }
+      } catch (e) {
+        console.log('[API][communes] preflight GET failed region=' + regionId + ' ' + String(e).slice(0, 200));
+      }
+      const response = await axios.post(API_BASE, params, { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.66 Safari/537.36', ...(cookieHeader ? { Cookie: cookieHeader } : {}) }, timeout: 7000 });
   console.log(`[API][communes] farmanet status=${response.status} region=${regionId}`);
   const data = response.data;
       const comunas = Array.isArray(data)
@@ -177,7 +198,17 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
             try {
             // Usar POST form-encoded para locales_farmacias
             const params = new URLSearchParams({ func: 'locales_farmacias', region: String(region) });
-            const response = await axios.post(API_BASE, params, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 7000 });
+            let cookieHeader = '';
+            try {
+              const pre = await axios.get(API_BASE, { headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.66 Safari/537.36' }, timeout: 7000 });
+              const setCookies = pre.headers && pre.headers['set-cookie'];
+              if (Array.isArray(setCookies) && setCookies.length > 0) {
+                cookieHeader = setCookies.map((c: string) => c.split(';')[0]).join('; ');
+              }
+            } catch (e) {
+              console.log('[API][pharmacies] preflight GET failed region=' + region + ' ' + String(e).slice(0, 200));
+            }
+            const response = await axios.post(API_BASE, params, { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.7258.66 Safari/537.36', ...(cookieHeader ? { Cookie: cookieHeader } : {}) }, timeout: 7000 });
             data = response.data;
             // Log de la respuesta cruda de la API oficial (parcial, para evitar logs enormes)
             try {
