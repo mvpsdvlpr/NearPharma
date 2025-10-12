@@ -1,5 +1,5 @@
-import fetch from 'node-fetch';
-
+// Use the global fetch available in Node 18+. Avoid importing node-fetch so
+// the GitHub Actions runner doesn't need an extra dependency.
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL || process.env.UPSTASH_REDIS_REST_URL_HTTP || '';
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN_HTTP || '';
 
@@ -10,7 +10,9 @@ function hasUpstash() {
 async function upstashFetch(path: string, opts: any = {}) {
   if (!hasUpstash()) throw new Error('Upstash not configured');
   const url = UPSTASH_URL.replace(/\/+$/, '') + '/' + path.replace(/^\/+/, '');
-  const res = await fetch(url, {
+  const theFetch = (globalThis as any).fetch;
+  if (typeof theFetch !== 'function') throw new Error('global fetch is not available in this runtime');
+  const res = await theFetch(url, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${UPSTASH_TOKEN}`,
