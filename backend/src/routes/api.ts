@@ -1,3 +1,74 @@
+// Handler para compatibilidad POST /mfarmacias/mapa.php
+export async function handleMapaPhpCompat(req: Request, res: Response) {
+  const func = req.body.func || req.query.func;
+  const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
+  try {
+    if (func === 'iconos') {
+      // Obtener respuesta real desde la API oficial
+      const response = await axios.post(API_BASE, new URLSearchParams({ func: 'iconos' }), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+      // Farmanet responde { correcto: true, respuesta: { ... } }
+      if (response.data && response.data.correcto === true && response.data.respuesta) {
+        return res.json(response.data);
+      }
+      // Si la API responde plano, envolver en la estructura correcta
+      return res.json({ correcto: true, respuesta: response.data });
+    }
+    if (func === 'regiones') {
+      const response = await axios.post(API_BASE, new URLSearchParams({ func: 'regiones' }), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+      return res.json(response.data);
+    }
+    if (func === 'comunas') {
+      const region = req.body.region || req.query.region;
+      const params = new URLSearchParams({ func: 'comunas' });
+      if (region) params.append('region', region);
+      const response = await axios.post(API_BASE, params, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+      return res.json(response.data);
+    }
+    if (func === 'fechas') {
+      const response = await axios.post(API_BASE, new URLSearchParams({ func: 'fechas' }), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+      return res.json(response.data);
+    }
+    if (func === 'region') {
+      const region = req.body.region || req.query.region;
+      const filtro = req.body.filtro || req.query.filtro;
+      const fecha = req.body.fecha || req.query.fecha;
+      const hora = req.body.hora || req.query.hora;
+      const params = new URLSearchParams({ func: 'region', region: region || '' });
+      if (filtro) params.append('filtro', filtro);
+      if (fecha) params.append('fecha', fecha);
+      if (hora) params.append('hora', hora);
+      const response = await axios.post(API_BASE, params, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+      return res.json(response.data);
+    }
+    if (func === 'local') {
+      const im = req.body.im || req.query.im;
+      const fecha = req.body.fecha || req.query.fecha;
+      const params = new URLSearchParams({ func: 'local', im: im || '' });
+      if (fecha) params.append('fecha', fecha);
+      const response = await axios.post(API_BASE, params, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+      return res.json(response.data);
+    }
+    if (func === 'sector') {
+      // Simular sector (no implementado)
+      return res.json({ correcto: true, respuesta: { locales: [] } });
+    }
+    return res.status(400).json({ correcto: false, error: 'Func no soportado' });
+  } catch (err) {
+    return res.status(500).json({ correcto: false, error: String(err) });
+  }
+}
 
 
 import express, { Request, Response, NextFunction, Router } from 'express';
@@ -16,22 +87,14 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
   router.get('/regions', async (req: Request, res: Response) => {
     console.log('[API] GET /api/regions');
     try {
-  const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
-      const regionesSet = new Set();
-      for (let region = 1; region <= 16; region++) {
-        try {
-          const response = await axios.get(`${API_BASE}/${region}`);
-          const data = response.data;
-          if (Array.isArray(data)) {
-            data.forEach((item: any) => {
-              if (item.region_nombre) regionesSet.add(JSON.stringify({ id: region, nombre: item.region_nombre }));
-            });
-          }
-        } catch (e) {
-          console.error(`[API][regions] Error consultando region ${region}:`, e);
-        }
-      }
-      const regiones = Array.from(regionesSet).map((s: any) => JSON.parse(s));
+      const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
+      // La API oficial usa ?func=locales_regiones
+      const response = await axios.get(`${API_BASE}?func=locales_regiones`);
+      const data = response.data;
+      // Se espera un array de regiones
+      const regiones = Array.isArray(data)
+        ? data.map((item: any) => ({ id: item.region_id, nombre: item.region_nombre }))
+        : [];
       res.json(regiones);
     } catch (err) {
       console.error('[API][regions] Error general:', err);
@@ -50,19 +113,13 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
     const regionId = req.query.region;
     console.log(`[API] GET /api/communes?region=${regionId}`);
     try {
-  const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
-      const response = await axios.get(`${API_BASE}/${regionId}`);
+      const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
+      // La API oficial usa ?func=locales_comunas&region=ID
+      const response = await axios.get(`${API_BASE}?func=locales_comunas&region=${regionId}`);
       const data = response.data;
-      const comunasSet = new Set();
-      if (Array.isArray(data)) {
-        data.forEach((item: any) => {
-          if (item.comuna_nombre) comunasSet.add(item.comuna_nombre);
-        });
-      }
-      const comunas = Array.from(comunasSet).map((nombre) => {
-        const nombreStr = String(nombre);
-        return { id: nombreStr.toLowerCase().replace(/ /g, '-'), nombre: nombreStr };
-      });
+      const comunas = Array.isArray(data)
+        ? data.map((item: any) => ({ id: String(item.comuna_nombre).toLowerCase().replace(/ /g, '-'), nombre: item.comuna_nombre }))
+        : [];
       res.json(comunas);
     } catch (err) {
       console.error(`[API][communes] Error para region ${regionId}:`, err);
@@ -107,22 +164,24 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
         const cacheKey = `pharmacies:${region}:${comuna || ''}:${tipo || ''}`;
         let result;
         const cached = cache.get(cacheKey);
+        const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
         if (cached) {
           result = cached;
         } else {
-          // Build API URL
           let data;
           try {
-            const response = await axios.get(`${API_BASE}/${region}`, { timeout: 5000 });
+            const response = await axios.get(`${API_BASE}?func=locales_farmacias&region=${region}`, { timeout: 5000 });
             data = response.data;
+            // Log de la respuesta cruda de la API oficial
+            console.log('[API][pharmacies] Respuesta cruda de Farmanet:', JSON.stringify(data));
           } catch (err) {
+            console.error('[API][pharmacies] Error al consultar Farmanet:', err);
             return res.status(500).json({ error: 'External API error' });
           }
-          // Validate data is array
           if (!Array.isArray(data)) {
-            return res.status(500).json({ error: 'Invalid data from API' });
+            console.error('[API][pharmacies] La respuesta NO es un array:', data);
+            return res.status(500).json({ error: 'Invalid data from API', raw: data });
           }
-          // Filter by comuna/tipo if provided
           result = data;
           if (comuna) {
             result = result.filter((item: any) => item.comuna_nombre?.toLowerCase() === String(comuna).toLowerCase());
@@ -130,12 +189,10 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
           if (tipo) {
             result = result.filter((item: any) => item.local_tipo?.toLowerCase() === String(tipo).toLowerCase());
           }
-          // Only cache if result is non-empty array
           if (Array.isArray(result) && result.length > 0) {
             cache.set(cacheKey, result, CACHE_TTL);
           }
         }
-        // Order by proximity if lat/lng provided
         if (lat !== undefined && lng !== undefined && !isNaN(Number(lat)) && !isNaN(Number(lng))) {
           const userLat = Number(lat);
           const userLng = Number(lng);
@@ -145,7 +202,6 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
             return dA - dB;
           });
         }
-        // Always return array (empty or with data)
         res.json(Array.isArray(result) ? result : []);
       } catch (err) {
         next(err);

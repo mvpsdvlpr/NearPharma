@@ -29,12 +29,21 @@ app.use(limiter);
 
 // JSON parsing (not needed for GET, but future-proof)
 app.use(express.json());
+// Soporte para application/x-www-form-urlencoded (como Farmanet)
+app.use(express.urlencoded({ extended: true }));
 
 // Input sanitization
 app.use(sanitizeInputs);
 
+
 // API routes
 app.use('/api', apiRouter);
+
+// Compatibilidad directa: POST /mfarmacias/mapa.php
+
+import { handleMapaPhpCompat } from './routes/api';
+// Registrar la ruta de compatibilidad ANTES del 404
+app.post('/mfarmacias/mapa.php', handleMapaPhpCompat);
 
 // 404 handler
 app.use((req: Request, res: Response) => {

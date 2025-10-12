@@ -37,6 +37,8 @@ dependencies:
   http: ^1.5.0
   geolocator: ^14.0.2
   flutter_dotenv: ^6.0.0
+  url_launcher: ^6.2.5
+  flutter_svg: ^2.1.6
 
 dev_dependencies:
   flutter_test:
@@ -53,17 +55,23 @@ dev_dependencies:
 # following page: https://dart.dev/tools/pub/pubspec
 
 # The following section is specific to Flutter packages.
+
 flutter:
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.
-  uses-material-design: true
 
+  uses-material-design: true
+  assets:
+    - .env
+    # Optional: copy the site's `img/` folder into `mobile/assets/img/` and enable kUseBundledImages in the widget
+    - assets/img/
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
+  # single files can be listed, but map.png is already covered by the folder above
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
