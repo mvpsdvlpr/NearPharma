@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { createApiRouter, handleFarmanetCompat } from './routes/api';
 import axios from 'axios';
 import { sanitizeInputs } from './middleware/security';
@@ -10,7 +10,10 @@ import { sanitizeInputs } from './middleware/security';
 const app = express();
 
 // Trust proxy (required when behind Vercel/Proxies so express-rate-limit can identify IPs)
-app.set('trust proxy', 1);
+// Use boolean true to trust the first proxy or a numeric value if you want to
+// trust a specific number of proxies. Vercel/Cloud providers typically require
+// trusting the proxy so X-Forwarded-For is considered.
+app.set('trust proxy', true);
 
 // Security HTTP headers
 app.use(helmet());
@@ -24,10 +27,24 @@ app.use(cors({
 // Logging
 app.use(morgan('dev'));
 
-// Rate limiting
+// Rate limiting — use a robust keyGenerator that tolerates forwarded headers
 const limiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
   max: 60, // limit each IP to 60 requests per windowMs
+  keyGenerator: (req: Request) => {
+    try {
+      // Prefer X-Forwarded-For if present (comma separated)
+      const xff = (req.headers['x-forwarded-for'] || '') as string;
+      if (xff) {
+        const first = xff.split(',')[0].trim();
+        if (first) return ipKeyGenerator(first);
+      }
+    } catch (e) {
+      // ignore
+    }
+    // Fall back to express's helper which handles IPv6 subnetting
+    return ipKeyGenerator(req.ip || '');
+  }
 });
 app.use(limiter);
 
