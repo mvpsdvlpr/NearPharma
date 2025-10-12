@@ -342,6 +342,10 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
       return res.status(500).json({ ok: false, error: String(err).slice(0, 1000) });
     }
   });
+  // Simple health endpoint for debugging mounting/routing
+  router.get('/debug/ping', (req: Request, res: Response) => {
+    res.json({ ok: true, now: new Date().toISOString(), env: process.env.NODE_ENV || 'dev' });
+  });
   // Exponer el cache para testing
   (router as any)._cache = cache;
   return router;
