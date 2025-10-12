@@ -88,8 +88,11 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
     console.log('[API] GET /api/regions');
     try {
       const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
-      // La API oficial usa ?func=locales_regiones
-      const response = await axios.get(`${API_BASE}?func=locales_regiones`);
+      // La API oficial responde mejor a POST form-encoded; usar POST para compatibilidad
+      const params = new URLSearchParams({ func: 'locales_regiones' });
+      const response = await axios.post(API_BASE, params, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 7000 });
+      // Mejor logging para diagnóstico remoto
+      console.log(`[API][regions] farmanet status=${response.status}`);
       const data = response.data;
       // Se espera un array de regiones
       const regiones = Array.isArray(data)
@@ -112,11 +115,13 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
     }
     const regionId = req.query.region;
     console.log(`[API] GET /api/communes?region=${regionId}`);
-    try {
-      const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
-      // La API oficial usa ?func=locales_comunas&region=ID
-      const response = await axios.get(`${API_BASE}?func=locales_comunas&region=${regionId}`);
-      const data = response.data;
+  try {
+  const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
+  // Usar POST form-encoded para locales_comunas
+  const params = new URLSearchParams({ func: 'locales_comunas', region: String(regionId) });
+  const response = await axios.post(API_BASE, params, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 7000 });
+  console.log(`[API][communes] farmanet status=${response.status} region=${regionId}`);
+  const data = response.data;
       const comunas = Array.isArray(data)
         ? data.map((item: any) => ({ id: String(item.comuna_nombre).toLowerCase().replace(/ /g, '-'), nombre: item.comuna_nombre }))
         : [];
@@ -169,11 +174,18 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
           result = cached;
         } else {
           let data;
-          try {
-            const response = await axios.get(`${API_BASE}?func=locales_farmacias&region=${region}`, { timeout: 5000 });
+            try {
+            // Usar POST form-encoded para locales_farmacias
+            const params = new URLSearchParams({ func: 'locales_farmacias', region: String(region) });
+            const response = await axios.post(API_BASE, params, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 7000 });
             data = response.data;
-            // Log de la respuesta cruda de la API oficial
-            console.log('[API][pharmacies] Respuesta cruda de Farmanet:', JSON.stringify(data));
+            // Log de la respuesta cruda de la API oficial (parcial, para evitar logs enormes)
+            try {
+              const preview = typeof data === 'string' ? data.slice(0, 1000) : JSON.stringify(Array.isArray(data) ? data.slice(0, 10) : data).slice(0, 1000);
+              console.log('[API][pharmacies] farmanet status=' + response.status + ' preview=' + preview);
+            } catch (e) {
+              console.log('[API][pharmacies] farmanet status=' + response.status + ' (could not stringify preview)');
+            }
           } catch (err) {
             console.error('[API][pharmacies] Error al consultar Farmanet:', err);
             return res.status(500).json({ error: 'External API error' });
