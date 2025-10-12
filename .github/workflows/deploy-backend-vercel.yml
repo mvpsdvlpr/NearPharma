@@ -38,8 +38,8 @@ jobs:
         run: |
           # If required secrets are not set, skip deploy so the workflow doesn't fail silently
           if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
-            echo "Vercel secrets not set (VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID). Skipping deploy.";
-            exit 0;
+            echo "Vercel secrets not set (VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID). Failing job.";
+            exit 1;
           fi
           cd backend
           # Use the Vercel CLI to deploy the current backend directory
