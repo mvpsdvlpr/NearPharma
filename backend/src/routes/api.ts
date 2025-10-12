@@ -295,7 +295,9 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
   );
 
   // DEBUG: GET preflight + POST to Farmanet and return raw preview
-  router.get('/debug/farmanet', async (req: Request, res: Response) => {
+  const _allowDebug = (process.env.NODE_ENV || '').toLowerCase() !== 'production' || process.env.ALLOW_DEBUG === 'true';
+  if (_allowDebug) {
+    router.get('/debug/farmanet', async (req: Request, res: Response) => {
     const commonHeaders = {
       'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)',
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -341,11 +343,12 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
     } catch (err) {
       return res.status(500).json({ ok: false, error: String(err).slice(0, 1000) });
     }
-  });
-  // Simple health endpoint for debugging mounting/routing
-  router.get('/debug/ping', (req: Request, res: Response) => {
-    res.json({ ok: true, now: new Date().toISOString(), env: process.env.NODE_ENV || 'dev' });
-  });
+    });
+    // Simple health endpoint for debugging mounting/routing
+    router.get('/debug/ping', (req: Request, res: Response) => {
+      res.json({ ok: true, now: new Date().toISOString(), env: process.env.NODE_ENV || 'dev' });
+    });
+  } // end _allowDebug
   // Exponer el cache para testing
   (router as any)._cache = cache;
   return router;

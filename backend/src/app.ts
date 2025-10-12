@@ -50,10 +50,12 @@ import { handleMapaPhpCompat } from './routes/api';
 app.post('/mfarmacias/mapa.php', handleMapaPhpCompat);
 
 // Rutas de depuración explícitas bajo /mfarmacias para asegurar disponibilidad en Vercel
-app.get('/mfarmacias/debug/ping', (req: Request, res: Response) => {
-  res.json({ ok: true, now: new Date().toISOString(), env: process.env.NODE_ENV || 'dev' });
-});
-app.get('/mfarmacias/debug/farmanet', async (req: Request, res: Response) => {
+const _allowDebug = (process.env.NODE_ENV || '').toLowerCase() !== 'production' || process.env.ALLOW_DEBUG === 'true';
+if (_allowDebug) {
+  app.get('/mfarmacias/debug/ping', (req: Request, res: Response) => {
+    res.json({ ok: true, now: new Date().toISOString(), env: process.env.NODE_ENV || 'dev' });
+  });
+  app.get('/mfarmacias/debug/farmanet', async (req: Request, res: Response) => {
   const func = String(req.query.func || 'locales_regiones');
   const region = req.query.region as string | undefined;
   const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
@@ -87,7 +89,8 @@ app.get('/mfarmacias/debug/farmanet', async (req: Request, res: Response) => {
   } catch (err) {
     return res.status(500).json({ ok: false, error: String(err).slice(0, 1000) });
   }
-});
+  });
+} // end _allowDebug
 
 // 404 handler
 app.use((req: Request, res: Response) => {
