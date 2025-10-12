@@ -4,6 +4,7 @@ import cors from 'cors';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import apiRouter from './routes/api';
+import axios from 'axios';
 import { sanitizeInputs } from './middleware/security';
 
 const app = express();
@@ -47,6 +48,46 @@ app.use('/mfarmacias', apiRouter);
 import { handleMapaPhpCompat } from './routes/api';
 // Registrar la ruta de compatibilidad ANTES del 404
 app.post('/mfarmacias/mapa.php', handleMapaPhpCompat);
+
+// Rutas de depuración explícitas bajo /mfarmacias para asegurar disponibilidad en Vercel
+app.get('/mfarmacias/debug/ping', (req: Request, res: Response) => {
+  res.json({ ok: true, now: new Date().toISOString(), env: process.env.NODE_ENV || 'dev' });
+});
+app.get('/mfarmacias/debug/farmanet', async (req: Request, res: Response) => {
+  const func = String(req.query.func || 'locales_regiones');
+  const region = req.query.region as string | undefined;
+  const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
+  try {
+    const commonHeaders = {
+      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'es-CL,es;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Referer': 'https://seremienlinea.minsal.cl/'
+    };
+    // Preflight GET
+    let cookieHeader = '';
+    try {
+      const pre = await axios.get(API_BASE, { headers: commonHeaders, timeout: 8000 });
+      const setCookies = pre.headers && (pre.headers as any)['set-cookie'];
+      if (Array.isArray(setCookies) && setCookies.length > 0) {
+        cookieHeader = setCookies.map((c: string) => c.split(';')[0]).join('; ');
+      }
+    } catch (e) {
+      // continue and attempt POST anyway
+    }
+
+    const params = new URLSearchParams({ func });
+    if (region) params.append('region', region);
+    const response = await axios.post(API_BASE, params, { headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...(commonHeaders as any), ...(cookieHeader ? { Cookie: cookieHeader } : {}) }, timeout: 10000, responseType: 'arraybuffer' });
+    const buf = Buffer.from(response.data || '');
+    const preview = buf.toString('utf8', 0, Math.min(buf.length, 5000));
+    const isJson = (() => { try { JSON.parse(preview); return true; } catch { return false; } })();
+    return res.json({ ok: true, status: response.status, headers: response.headers, preview: preview.slice(0, 2000), isJson });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: String(err).slice(0, 1000) });
+  }
+});
 
 // 404 handler
 app.use((req: Request, res: Response) => {
