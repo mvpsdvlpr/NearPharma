@@ -252,6 +252,40 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
     }
   );
 
+  // DEBUG: GET preflight + POST to Farmanet and return raw preview
+  router.get('/debug/farmanet', async (req: Request, res: Response) => {
+    const func = String(req.query.func || 'locales_regiones');
+    const region = req.query.region as string | undefined;
+    const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
+    try {
+      // Preflight GET to obtain cookies/challenges
+      let cookieHeader = '';
+      try {
+        const pre = await axios.get(API_BASE, { headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)' }, timeout: 8000 });
+        const setCookies = pre.headers && pre.headers['set-cookie'];
+        if (Array.isArray(setCookies) && setCookies.length > 0) {
+          cookieHeader = setCookies.map((c: string) => c.split(';')[0]).join('; ');
+        }
+      } catch (e) {
+        // continue, we'll attempt POST anyway
+      }
+
+      const params = new URLSearchParams({ func });
+      if (region) params.append('region', region);
+      const response = await axios.post(API_BASE, params, { headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)', ...(cookieHeader ? { Cookie: cookieHeader } : {}) }, timeout: 10000, responseType: 'arraybuffer' });
+
+      // Build a safe preview string
+      const buf = Buffer.from(response.data || '');
+      const preview = buf.toString('utf8', 0, Math.min(buf.length, 5000));
+      const isJson = (() => {
+        try { JSON.parse(preview); return true; } catch { return false; }
+      })();
+
+      return res.json({ ok: true, status: response.status, headers: response.headers, preview: preview.slice(0, 2000), isJson });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: String(err).slice(0, 1000) });
+    }
+  });
   // Exponer el cache para testing
   (router as any)._cache = cache;
   return router;
