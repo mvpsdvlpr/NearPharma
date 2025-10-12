@@ -199,19 +199,26 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
         } else {
           try {
             const apiBase = FARMANET_API_BASE;
-            const params = new URLSearchParams({ func: 'locales_farmacias', region: String(region) });
+            // Use permitted 'region' func (allowed list: regiones, comunas, fechas, region, local, sector)
+            // 'locales_farmacias' is not a valid func for Farmanet and will not work.
+            const params = new URLSearchParams({ func: 'region', region: String(region) });
             const cookieHeader = await preflightGetCookies(apiBase);
             const response = await postToFarmanet(params, apiBase, cookieHeader);
-            const data = response.data;
+            let data = response.data;
+            // Log a short preview for debugging
             try {
               const preview = typeof data === 'string' ? data.slice(0, 1000) : JSON.stringify(Array.isArray(data) ? data.slice(0, 10) : data).slice(0, 1000);
               console.log('[API][pharmacies] farmanet status=' + response.status + ' preview=' + preview);
             } catch (e) {
               console.log('[API][pharmacies] farmanet status=' + response.status + ' (could not stringify preview)');
             }
+            // Farmanet may return an envelope like { correcto: true, respuesta: { locales: [...] } }
+            if (data && typeof data === 'object' && (data as any).respuesta && Array.isArray((data as any).respuesta.locales)) {
+              data = (data as any).respuesta.locales;
+            }
             if (!Array.isArray(data)) {
               console.error('[API][pharmacies] La respuesta NO es un array:', data);
-              return res.status(500).json({ error: 'Invalid data from API', raw: String(response.preview).slice(0, 1000) });
+              return res.status(502).json({ error: 'Invalid data from API', preview: String(response.preview).slice(0, 1000) });
             }
             result = data;
             if (comuna) {
