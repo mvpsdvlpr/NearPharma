@@ -38,6 +38,9 @@ app.use(sanitizeInputs);
 
 // API routes
 app.use('/api', apiRouter);
+// Also mount the same router under /mfarmacias so compatibility/debug
+// endpoints are reachable from that base (used by the original web paths).
+app.use('/mfarmacias', apiRouter);
 
 // Compatibilidad directa: POST /mfarmacias/mapa.php
 
