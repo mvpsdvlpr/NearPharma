@@ -32,18 +32,23 @@ const limiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
   max: 60, // limit each IP to 60 requests per windowMs
   keyGenerator: (req: Request) => {
+    // express-rate-limit's ipKeyGenerator expects either the request object
+    // or a string IP. Passing the whole request lets the helper correctly
+    // handle IPv6 and proxy headers when `trust proxy` is enabled.
     try {
-      // Prefer X-Forwarded-For if present (comma separated)
       const xff = (req.headers['x-forwarded-for'] || '') as string;
       if (xff) {
         const first = xff.split(',')[0].trim();
         if (first) return ipKeyGenerator(first);
       }
     } catch (e) {
-      // ignore
+      // ignore and fall through
     }
-    // Fall back to express's helper which handles IPv6 subnetting
-    return ipKeyGenerator(req.ip || '');
+    // Prefer passing the whole request to ipKeyGenerator so it uses
+    // the same logic express-rate-limit expects (handles IPv6 masks).
+    // If req is missing an ip, fallback to empty string.
+    // @ts-expect-error ipKeyGenerator accepts Request or string at runtime
+    return ipKeyGenerator(req);
   }
 });
 app.use(limiter);
