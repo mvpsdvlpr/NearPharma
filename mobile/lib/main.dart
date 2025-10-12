@@ -9,15 +9,40 @@ import 'dart:math';
 import 'dart:async';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'widgets/pharmacy_card.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load();
+  // try to read package version at runtime; if available, inject into MyApp.appVersion
+  try {
+    final info = await PackageInfo.fromPlatform();
+    if (info.version.isNotEmpty || info.buildNumber.isNotEmpty) {
+      MyApp.packageVersion = info.version;
+      MyApp.packageBuild = info.buildNumber;
+      MyApp.appVersion = '${info.version}+${info.buildNumber}';
+    }
+  } catch (_) {
+    // ignore and use compile-time fallback
+  }
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+  /// App version string. The build metadata (after '+') uses the current
+  /// date in YYYYMMDD format so releases can be identified by release day.
+  ///
+  /// Example: '1.0.0-beta+20251012'
+  // Set this to the release date (format YYYYMMDD) when publishing a new version.
+  // Example: '20251012' for October 12, 2025.
+  static const String releaseDate = '20251012';
+
+  // Mutable static that can be overridden at startup from PackageInfo.
+  static String appVersion = '1.0.0-beta+$releaseDate';
+  // When PackageInfo is available we also keep its components for display.
+  static String packageVersion = '';
+  static String packageBuild = '';
 
   @override
   Widget build(BuildContext context) {
@@ -552,7 +577,7 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
   /// Selecciona el tipo en la UI, carga las fechas si corresponde, limpia la comuna y dispara la búsqueda automática.
   Future<void> buscar(String tipo) async {
     // normalize input: trim, lowercase, strip common diacritics
-    String _norm(String s) {
+    String norm(String s) {
       var t = s.trim().toLowerCase();
       t = t.replaceAll('á', 'a').replaceAll('é', 'e').replaceAll('í', 'i').replaceAll('ó', 'o').replaceAll('ú', 'u').replaceAll('ü', 'u').replaceAll('ñ', 'n');
       return t;
@@ -572,7 +597,7 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       'almacén': 'almacen',
     };
 
-    final key = _norm(tipo);
+  final key = norm(tipo);
     final mapped = aliases[key] ?? key;
 
     // Ensure tipos are loaded
@@ -759,7 +784,7 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('BuscaFarmacia'), centerTitle: true),
+  appBar: AppBar(title: const Text('NearPharma'), centerTitle: true),
       body: cargando
           ? const Center(child: CircularProgressIndicator())
           : error != null
@@ -855,7 +880,7 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
                             final horarioDia = horario['dia'] != null ? _stripHtml(horario['dia'].toString()) : '';
                             final imgPath = f['img'];
               final logo = (imgPath != null && imgPath.toString().isNotEmpty)
-                ? 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php?imagen=${imgPath}'
+                ? 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php?imagen=$imgPath'
                 : 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/img/logo.svg';
                             // tipo/titulo: local.tp is index to iconos/titulos arrays
                             String tipoNombre = '';
@@ -995,6 +1020,15 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
                       ),
                     if (!cargando && farmacias.isEmpty)
                       const Padding(padding: EdgeInsets.only(top: 32.0), child: Center(child: Text('No se encontraron farmacias.'))),
+                    // App version displayed at the bottom
+                    Padding(
+                      padding: const EdgeInsets.only(top: 24.0, bottom: 12.0),
+                      child: Center(child: Text(
+                        MyApp.packageVersion.isNotEmpty
+                          ? (MyApp.packageBuild.isNotEmpty ? 'Version: ${MyApp.packageVersion} (build ${MyApp.packageBuild})' : 'Version: ${MyApp.packageVersion}')
+                          : 'Version: ${MyApp.appVersion.replaceAll(RegExp(r"\s*-\s*"), "-")}',
+                        style: Theme.of(context).textTheme.bodySmall)),
+                    ),
                   ]),
                 ),
     );

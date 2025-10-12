@@ -20,9 +20,9 @@ flutter test
 CI
 --
 There is a GitHub Actions workflow to run tests on pushes and pull requests.
-# BuscaFarmacia
+# NearPharma
 
-BuscaFarmacia is an application designed to help users find pharmacies in their vicinity. This project aims to provide a user-friendly interface and efficient search capabilities.
+NearPharma is an application designed to help users find pharmacies in their vicinity. This project aims to provide a user-friendly interface and efficient search capabilities.
 
 ## Table of Contents
 

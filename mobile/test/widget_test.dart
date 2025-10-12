@@ -15,6 +15,6 @@ void main() {
     await tester.pumpWidget(const MyApp());
 
   // Verify the app bar title exists (app startup smoke test)
-  expect(find.text('BuscaFarmacia'), findsOneWidget);
+  expect(find.text('NearPharma'), findsOneWidget);
   });
 }

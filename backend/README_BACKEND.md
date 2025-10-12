@@ -1,6 +1,6 @@
-# BuscaFarmacia Backend
+# NearPharma Backend
 
-This is a secure Node.js + TypeScript backend for the BuscaFarmacia app, designed for Vercel deployment and scalable cloud hosting.
+This is a secure Node.js + TypeScript backend for the NearPharma app, designed for Vercel deployment and scalable cloud hosting.
 
 ## Features
 - Express REST API proxy to Chilean Ministry of Health pharmacy data

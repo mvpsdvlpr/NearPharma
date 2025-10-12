@@ -143,7 +143,7 @@ class AssetAdaptiveImage extends StatelessWidget {
   const AssetAdaptiveImage({super.key, required this.assetPath, required this.width, required this.height, this.fit = BoxFit.contain});
 
   Future<Map<String, dynamic>?> _resolveBytes() async {
-    Future<Uint8List?> _try(String p) async {
+    Future<Uint8List?> tryLoad(String p) async {
       try {
         final b = await rootBundle.load(p);
         return b.buffer.asUint8List();
@@ -153,16 +153,16 @@ class AssetAdaptiveImage extends StatelessWidget {
     }
 
     final orig = assetPath;
-    final o = await _try(orig);
+  final o = await tryLoad(orig);
     if (o != null) return {'bytes': o, 'used': orig};
 
     if (orig.toLowerCase().endsWith('.svg')) {
-      final alt = orig.substring(0, orig.length - 4) + '.png';
-      final a = await _try(alt);
+  final alt = '${orig.substring(0, orig.length - 4)}.png';
+  final a = await tryLoad(alt);
       if (a != null) return {'bytes': a, 'used': alt};
     } else if (orig.contains('.')) {
       final alt = orig.replaceFirst(RegExp(r'\.[^./]+\$'), '.svg');
-      final a = await _try(alt);
+  final a = await tryLoad(alt);
       if (a != null) return {'bytes': a, 'used': alt};
     }
 
@@ -299,12 +299,11 @@ class PharmacyCard extends StatelessWidget {
     final regionId = f['rg']?.toString() ?? '';
     final comunaNombre = comunasMap[comunaId] ?? comunaId;
     final regionNombre = regionesMap[regionId] ?? regionId;
-  // phone may be optional; keep it available for future use
-  final telefono = f['tl'] ?? '';
+      final telefonoLocal = f['tl'] ?? ''; // renamed variable
     final horarioDia = horario['dia'] != null ? _stripHtml(horario['dia'].toString()) : '';
     final imgPath = f['img'];
-    final logo = (imgPath != null && imgPath.toString().isNotEmpty)
-        ? 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php?imagen=${imgPath}'
+  final logo = (imgPath != null && imgPath.toString().isNotEmpty)
+    ? 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php?imagen=$imgPath'
         : 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/img/logo.svg';
 
   final Widget logoWidget = disableNetworkImages
@@ -349,7 +348,7 @@ class PharmacyCard extends StatelessWidget {
               const SizedBox(height: 8),
               Text(direccion, style: Theme.of(context).textTheme.bodyMedium, maxLines: 2, overflow: TextOverflow.ellipsis),
               Text('$comunaNombre, $regionNombre', style: Theme.of(context).textTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
-              if (telefono.toString().isNotEmpty) Text('Tel: $telefono', style: Theme.of(context).textTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+              if (telefonoLocal.toString().isNotEmpty) Text('Tel: $telefonoLocal', style: Theme.of(context).textTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
             ]),
           ),
           const SizedBox(width: 12),
