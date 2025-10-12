@@ -6,7 +6,12 @@
   "scripts": {
   "start": "ts-node src/index.ts",
     "build": "tsc",
+    "vercel-build": "npm run build",
+    "start:prod": "node dist/index.js",
     "test": "echo \"No tests specified\" && exit 0"
+  },
+  "engines": {
+    "node": "18.x"
   },
   "dependencies": {
     "@types/cors": "^2.8.19",
