@@ -3,8 +3,14 @@ name: Flutter tests
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'mobile/**'
+      - 'pubspec.yaml'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'mobile/**'
+      - 'pubspec.yaml'
 
 jobs:
   test:
