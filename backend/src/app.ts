@@ -3,7 +3,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
-import apiRouter from './routes/api';
+import { createApiRouter, handleFarmanetCompat } from './routes/api';
 import axios from 'axios';
 import { sanitizeInputs } from './middleware/security';
 
@@ -35,7 +35,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Input sanitization
 app.use(sanitizeInputs);
-
+const apiRouter = createApiRouter();
 
 // API routes
 app.use('/api', apiRouter);
@@ -44,10 +44,8 @@ app.use('/api', apiRouter);
 app.use('/mfarmacias', apiRouter);
 
 // Compatibilidad directa: POST /mfarmacias/mapa.php
-
-import { handleMapaPhpCompat } from './routes/api';
 // Registrar la ruta de compatibilidad ANTES del 404
-app.post('/mfarmacias/mapa.php', handleMapaPhpCompat);
+app.post('/mfarmacias/mapa.php', handleFarmanetCompat);
 
 // Rutas de depuración explícitas bajo /mfarmacias para asegurar disponibilidad en Vercel
 const _allowDebug = (process.env.NODE_ENV || '').toLowerCase() !== 'production' || process.env.ALLOW_DEBUG === 'true';

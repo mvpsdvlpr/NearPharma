@@ -844,3 +844,4 @@ mobile/ios/Flutter/Flutter.podspec.zip
 mobile/ios/Flutter/Flutter.podspec.lock
 mobile/ios/Flutter/Flutter.podspec.versions
 mobile/ios/Flutter/Flutter.podspec.yaml
+.vercel
