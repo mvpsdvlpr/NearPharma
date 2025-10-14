@@ -191,9 +191,15 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
     if (widget.apiClient != null) {
       return widget.apiClient!.postForm(body);
     }
+    // When no ApiClient is injected, create a short-lived ApiClient so we get
+    // consistent request/response logging (ApiClient.postForm logs requests).
     final apiBase = await _apiBase();
-    final url = Uri.parse('$apiBase/mfarmacias/mapa.php');
-    return await http.post(url, headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: body);
+    final client = ApiClient(baseUrl: apiBase);
+    try {
+      return await client.postForm(body);
+    } finally {
+      client.close();
+    }
   }
 
   Future<void> _loadFiltros() async {
