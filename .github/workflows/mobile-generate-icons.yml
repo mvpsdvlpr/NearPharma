@@ -1,0 +1,53 @@
+name: Generate Flutter Launcher Icons
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/upstash-metrics-trustproxy
+
+jobs:
+  generate-icons:
+    name: Generate Icons
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Java (required for some Flutter tooling)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 'stable'
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: |
+          flutter pub get
+
+      - name: Run flutter_launcher_icons
+        working-directory: mobile
+        run: |
+          # Use dart run in newer versions, but the package exposes a bin that supports this invocation
+          flutter pub run flutter_launcher_icons:main
+
+      - name: Upload generated Android icons
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-icons
+          path: |
+            mobile/android/app/src/main/res/mipmap-*
+
+      - name: Upload generated iOS icons
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-app-icons
+          path: |
+            mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset
