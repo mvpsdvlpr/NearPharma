@@ -89,7 +89,7 @@ if (_allowDebug) {
     }
   });
   app.get('/mfarmacias/debug/farmanet', async (req: Request, res: Response) => {
-  const func = String(req.query.func || 'locales_regiones');
+  const func = String(req.query.func || 'regiones');
   const region = req.query.region as string | undefined;
   const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
   try {

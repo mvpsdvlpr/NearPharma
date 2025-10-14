@@ -41,15 +41,123 @@ async function postToFarmanet(params: URLSearchParams, apiBase = FARMANET_API_BA
   if (cookieHeader) headers.Cookie = cookieHeader;
   const response = await axios.post(apiBase, params, { headers, timeout, responseType: 'arraybuffer' });
   const buf = Buffer.from(response.data || '');
-  const preview = buf.toString('utf8', 0, Math.min(buf.length, FARMANET_PREVIEW_LENGTH));
-  // Try parse JSON safely
-  try {
-    const parsed = JSON.parse(preview);
-    return { status: response.status, headers: response.headers, data: parsed, preview, isJson: true };
-  } catch (_) {
-    // If it's not JSON, return raw preview and full buffer as fallback
-    return { status: response.status, headers: response.headers, data: preview, preview, isJson: false };
+  const max = Math.min(buf.length, FARMANET_PREVIEW_LENGTH);
+  // First try utf8
+  let preview = buf.toString('utf8', 0, max);
+
+  // Helper to attempt JSON parsing with some normalization strategies
+  const tryParse = (s: string): any | null => {
+    try {
+      const p = JSON.parse(s);
+      // If parsed value is a string that itself contains JSON, try parse inner JSON
+      if (typeof p === 'string') {
+        try {
+          return JSON.parse(p);
+        } catch (_) {
+          return p;
+        }
+      }
+      return p;
+    } catch (e) {
+      // try remove BOM and control chars
+      try {
+        const cleaned = s.replace(/^[\uFEFF\u200B]+/, '').replace(/[\x00-\x1F]+/g, '');
+        const p2 = JSON.parse(cleaned);
+        if (typeof p2 === 'string') {
+          try { return JSON.parse(p2); } catch (_) { return p2; }
+        }
+        return p2;
+      } catch (e2) {
+        // attempt to extract a JSON substring (first {...} block)
+        const m = s.match(/\{[\s\S]*\}/);
+        if (m) {
+          try {
+            return JSON.parse(m[0]);
+          } catch (e3) {
+            // attempt to parse nested JSON (string containing JSON)
+            const innerMatch = m[0].match(/"(\{[\s\S]*\})"/);
+            if (innerMatch) {
+              try {
+                const inner = innerMatch[1].replace(/\\"/g, '"');
+                const innerParsed = JSON.parse(inner);
+                if (typeof innerParsed === 'string') {
+                  try { return JSON.parse(innerParsed); } catch (_) { return innerParsed; }
+                }
+                return innerParsed;
+              } catch (_) {
+                return null;
+              }
+            }
+            return null;
+          }
+        }
+        return null;
+      }
+    }
+  };
+
+  // Try parsing utf8 preview
+  // Normalize decimal commas used as decimal separators in some upstream responses
+  const normalizeDecimalCommas = (s: string) =>
+    s.replace(/"((?:lat|lng|local_lat|local_lng|lt|lg))"\s*:\s*"(-?\d+),(\d+)"/gi, (_m, key, a, b) => `"${key}":"${a}.${b}"`);
+
+  // Also get full body as UTF8 string for broader parsing attempts
+  const fullStr = buf.toString('utf8', 0, buf.length);
+
+  // Try a set of parsing attempts in order to maximize chances of extracting JSON
+  const attempts = [preview, fullStr, normalizeDecimalCommas(preview), normalizeDecimalCommas(fullStr)];
+  let parsed: any | null = null;
+  for (const attempt of attempts) {
+    try {
+      parsed = tryParse(attempt);
+      if (parsed != null) {
+        preview = attempt.slice(0, max);
+        break;
+      }
+    } catch (_) {
+      // ignore and continue
+    }
   }
+  // If not parsed, try latin1 decoding (some upstream responses may use legacy encodings)
+  if (parsed == null) {
+    try {
+      const previewLatin1 = buf.toString('latin1', 0, max);
+      parsed = tryParse(previewLatin1);
+      if (parsed != null) preview = previewLatin1;
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  if (parsed != null) {
+    return { status: response.status, headers: response.headers, data: parsed, preview, isJson: true };
+  }
+
+  // If we reach here parsing failed — add debug logs to help diagnose upstream content
+  try {
+    console.error('[API][postToFarmanet] failed to parse upstream response as JSON');
+    console.error('[API][postToFarmanet] status=' + response.status + ' content-type=' + (response.headers && (response.headers as any)['content-type']));
+    // print a longer preview (first 4000 chars) to help debugging
+    const longPreview = fullStr.slice(0, Math.min(fullStr.length, 4000));
+    console.error('[API][postToFarmanet] preview=' + longPreview);
+  } catch (_) {}
+
+  // As a last attempt, if the response body is itself a JSON string containing JSON
+  // (e.g. "{\"correcto\":true,...}"), try to extract that.
+  try {
+    const asString = buf.toString('utf8', 0, buf.length);
+    const unquoted = asString.match(/"\{[\s\S]*\}"/);
+    if (unquoted) {
+      const inner = unquoted[0].slice(1, -1).replace(/\\"/g, '"');
+      const maybe = JSON.parse(inner);
+      return { status: response.status, headers: response.headers, data: maybe, preview: inner.slice(0, FARMANET_PREVIEW_LENGTH), isJson: true };
+    }
+  } catch (_) {
+    // ignore
+  }
+
+  // If it's not JSON, return raw preview and full buffer as fallback
+  return { status: response.status, headers: response.headers, data: preview, preview, isJson: false };
 }
 
 // Handler para compatibilidad POST /mfarmacias/mapa.php
@@ -120,7 +228,7 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
     try {
       const apiBase = FARMANET_API_BASE;
       const cookieHeader = await preflightGetCookies(apiBase);
-      const params = new URLSearchParams({ func: 'locales_regiones' });
+  const params = new URLSearchParams({ func: 'regiones' });
       const response = await postToFarmanet(params, apiBase, cookieHeader);
       console.log(`[API][regions] farmanet status=${response.status}`);
       const data = response.data;
@@ -146,7 +254,7 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
     console.log(`[API] GET /api/communes?region=${regionId}`);
     try {
       const apiBase = FARMANET_API_BASE;
-      const params = new URLSearchParams({ func: 'locales_comunas', region: String(regionId) });
+  const params = new URLSearchParams({ func: 'comunas', region: String(regionId) });
       const cookieHeader = await preflightGetCookies(apiBase);
       const response = await postToFarmanet(params, apiBase, cookieHeader);
       console.log(`[API][communes] farmanet status=${response.status} region=${regionId}`);
@@ -255,7 +363,7 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
   const _allowDebug = (process.env.NODE_ENV || '').toLowerCase() !== 'production' || process.env.ALLOW_DEBUG === 'true';
   if (_allowDebug) {
     router.get('/debug/farmanet', async (req: Request, res: Response) => {
-      const func = String(req.query.func || 'locales_regiones');
+      const func = String(req.query.func || 'regiones');
       const region = req.query.region as string | undefined;
       const apiBase = FARMANET_API_BASE;
       try {
