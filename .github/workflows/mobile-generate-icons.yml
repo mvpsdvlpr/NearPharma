@@ -13,6 +13,10 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          # needed so we can push commits back to the branch
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Set up Java (required for some Flutter tooling)
         uses: actions/setup-java@v4
@@ -51,3 +55,28 @@ jobs:
           name: ios-app-icons
           path: |
             mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset
+
+      - name: Commit and push generated icons
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          cd $GITHUB_WORKSPACE
+          # configure git author
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Add generated icon assets (android mipmaps and iOS appiconset)
+          git add -A mobile/android/app/src/main/res || true
+          git add -A mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset || true
+
+          # If there are no changes, exit cleanly
+          if git diff --staged --quiet; then
+            echo "No generated icon changes to commit"
+            exit 0
+          fi
+
+          git commit -m "chore(mobile): generate launcher icons [skip ci]"
+          # Push to the branch that triggered the workflow
+          git push origin HEAD:${{ github.ref_name }}
