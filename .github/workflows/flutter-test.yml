@@ -20,9 +20,9 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          # Use the stable channel (a Flutter version that includes Dart >= 3.1)
-          # so that dev dependencies like flutter_lints ^4.0.0 resolve correctly.
-          flutter-version: 'stable'
+          # Pin to a concrete Flutter version that includes Dart >= 3.1 so
+          # dependency resolution is reproducible across CI runs.
+          flutter-version: '3.13.0'
       - name: Cache pub
         uses: actions/cache@v4
         with:
