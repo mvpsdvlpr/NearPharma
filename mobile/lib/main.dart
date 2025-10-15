@@ -426,52 +426,39 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
 
     // Ensure final displayed list is ordered by distance to the user when possible.
       // If a comuna is selected, filter the detailed results by that comuna using the detailed 'f' object
-      if (comunaSeleccionada != null && comunaSeleccionada!.isNotEmpty) {
+      final filteredDetailed = detailed.where((d) {
         try {
-          final targetComunaId = comunaSeleccionada!.toString();
+          final f = d['f'] ?? d['raw'] ?? d;
+          final targetComunaId = comunaSeleccionada?.toString() ?? '';
           final targetComunaName = comunasMap[targetComunaId] ?? '';
-          detailed = detailed.where((d) {
-            try {
-              final f = d['f'] ?? d['raw'] ?? d;
-              // Try comuna id keys
-              final cm = (f['cm'] ?? f['comuna'] ?? f['comuna_id'] ?? f['comunaId'])?.toString();
-              if (cm != null && cm.isNotEmpty && cm == targetComunaId) return true;
-              // Try comuna name
-              final cname = (f['comuna_nombre'] ?? f['comunaNombre'] ?? f['comuna_nombre_local'] ?? f['comuna'])?.toString() ?? '';
-              if (cname.isNotEmpty && targetComunaName.isNotEmpty) {
-                if (cname.toLowerCase().trim() == targetComunaName.toLowerCase().trim()) return true;
-                if (cname.toLowerCase().contains(targetComunaName.toLowerCase())) return true;
-              }
-              // Try address containing comuna name (dr / direccion)
-              final dr = (f['dr'] ?? f['direccion'] ?? f['local_dr'] ?? f['local_direccion'])?.toString() ?? '';
-              if (dr.isNotEmpty && targetComunaName.isNotEmpty && dr.toLowerCase().contains(targetComunaName.toLowerCase())) return true;
-            } catch (_) {}
-            return false;
-          }).toList();
-        } catch (_) {}
-      }
 
-      if (currentPosition != null && detailed.isNotEmpty) {
-      // detailed items are maps with 'f' containing the farmacia info; map to raw f for sorting
-      final mapped = detailed.map((d) => d['f'] ?? d['raw'] ?? d).toList();
-  final sorted = sortByProximity(mapped, currentPosition!.latitude, currentPosition!.longitude);
-      // Reorder detailed to match the sorted 'f' order by matching identifiers (prefer 'im' or 'id')
-      Map<String, int> idToIndex = {};
-      for (int i = 0; i < sorted.length; i++) {
-        try {
-          final s = sorted[i];
-          final id = (s['im'] ?? s['id'] ?? i).toString();
-          idToIndex[id] = i;
+          // Check comuna id
+          final cm = (f['cm'] ?? f['comuna'] ?? f['comuna_id'] ?? f['comunaId'])?.toString();
+          if (cm != null && cm == targetComunaId) return true;
+
+          // Check comuna name
+          final cname = (f['comuna_nombre'] ?? f['comunaNombre'] ?? f['comuna_nombre_local'] ?? f['comuna'])?.toString() ?? '';
+          if (cname.toLowerCase().contains(targetComunaName.toLowerCase())) return true;
+
+          // Check address
+          final dr = (f['dr'] ?? f['direccion'] ?? f['local_dr'] ?? f['local_direccion'])?.toString() ?? '';
+          if (dr.toLowerCase().contains(targetComunaName.toLowerCase())) return true;
         } catch (_) {}
-      }
-      detailed.sort((a, b) {
-        final aRaw = a['f'] ?? a['raw'] ?? a;
-        final bRaw = b['f'] ?? b['raw'] ?? b;
-        final aId = (aRaw['im'] ?? aRaw['id'] ?? '').toString();
-        final bId = (bRaw['im'] ?? bRaw['id'] ?? '').toString();
-        final ai = idToIndex.containsKey(aId) ? idToIndex[aId]! : 9223372036854775807;
-        final bi = idToIndex.containsKey(bId) ? idToIndex[bId]! : 9223372036854775807;
-        return ai.compareTo(bi);
+        return false;
+      }).toList();
+
+      // Use filteredDetailed instead of detailed
+      if (currentPosition != null && filteredDetailed.isNotEmpty) {
+      final mapped = filteredDetailed.map((d) => d['f'] ?? d['raw'] ?? d).toList();
+      final sorted = sortByProximity(mapped, currentPosition!.latitude, currentPosition!.longitude);
+      setState(() {
+        farmacias = sorted;
+        cargando = false;
+      });
+    } else {
+      setState(() {
+        farmacias = [];
+        cargando = false;
       });
     }
 

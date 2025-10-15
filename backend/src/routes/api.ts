@@ -370,11 +370,41 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
             return isNaN(n) ? NaN : n;
           };
 
+          // Validate coordinates and filter pharmacies within bounds
+          const bounds = {
+            latMin: userLat - 0.1, // Example bounds, adjust as needed
+            latMax: userLat + 0.1,
+            lngMin: userLng - 0.1,
+            lngMax: userLng + 0.1,
+          };
+
+          result = result.filter((item: any) => {
+            const lat = parseCoord(item.lt);
+            const lng = parseCoord(item.lg);
+            return !isNaN(lat) && !isNaN(lng);
+          });
+
+          // Debugging: Log distances for pharmacies
+          console.log('[DEBUG] User coordinates:', { userLat, userLng });
+          result.forEach((item: any) => {
+            const lat = parseCoord(item.lt);
+            const lng = parseCoord(item.lg);
+            const dist = distance(userLat, userLng, lat, lng);
+            console.log('[DEBUG] Pharmacy:', {
+              id: item.im,
+              name: item.nm,
+              lat,
+              lng,
+              distance: dist,
+            });
+          });
+
+          // Sort pharmacies by distance
           result = result.slice().sort((a: any, b: any) => {
-            const aLat = parseCoord(a.local_lat ?? a.lat ?? a.lt);
-            const aLng = parseCoord(a.local_lng ?? a.lng ?? a.lg);
-            const bLat = parseCoord(b.local_lat ?? b.lat ?? b.lt);
-            const bLng = parseCoord(b.local_lng ?? b.lng ?? b.lg);
+            const aLat = parseCoord(a.lt);
+            const aLng = parseCoord(a.lg);
+            const bLat = parseCoord(b.lt);
+            const bLng = parseCoord(b.lg);
             const dA = distance(userLat, userLng, aLat, aLng);
             const dB = distance(userLat, userLng, bLat, bLng);
             return dA - dB;
