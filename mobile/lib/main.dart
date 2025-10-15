@@ -425,7 +425,33 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
     final detailed = await Future.wait(futures);
 
     // Ensure final displayed list is ordered by distance to the user when possible.
-    if (currentPosition != null && detailed.isNotEmpty) {
+      // If a comuna is selected, filter the detailed results by that comuna using the detailed 'f' object
+      if (comunaSeleccionada != null && comunaSeleccionada!.isNotEmpty) {
+        try {
+          final targetComunaId = comunaSeleccionada!.toString();
+          final targetComunaName = comunasMap[targetComunaId] ?? '';
+          detailed = detailed.where((d) {
+            try {
+              final f = d['f'] ?? d['raw'] ?? d;
+              // Try comuna id keys
+              final cm = (f['cm'] ?? f['comuna'] ?? f['comuna_id'] ?? f['comunaId'])?.toString();
+              if (cm != null && cm.isNotEmpty && cm == targetComunaId) return true;
+              // Try comuna name
+              final cname = (f['comuna_nombre'] ?? f['comunaNombre'] ?? f['comuna_nombre_local'] ?? f['comuna'])?.toString() ?? '';
+              if (cname.isNotEmpty && targetComunaName.isNotEmpty) {
+                if (cname.toLowerCase().trim() == targetComunaName.toLowerCase().trim()) return true;
+                if (cname.toLowerCase().contains(targetComunaName.toLowerCase())) return true;
+              }
+              // Try address containing comuna name (dr / direccion)
+              final dr = (f['dr'] ?? f['direccion'] ?? f['local_dr'] ?? f['local_direccion'])?.toString() ?? '';
+              if (dr.isNotEmpty && targetComunaName.isNotEmpty && dr.toLowerCase().contains(targetComunaName.toLowerCase())) return true;
+            } catch (_) {}
+            return false;
+          }).toList();
+        } catch (_) {}
+      }
+
+      if (currentPosition != null && detailed.isNotEmpty) {
       // detailed items are maps with 'f' containing the farmacia info; map to raw f for sorting
       final mapped = detailed.map((d) => d['f'] ?? d['raw'] ?? d).toList();
   final sorted = sortByProximity(mapped, currentPosition!.latitude, currentPosition!.longitude);
