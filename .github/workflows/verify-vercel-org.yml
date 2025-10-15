@@ -1,0 +1,61 @@
+name: Verify Vercel Org ID
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  verify-org:
+    runs-on: ubuntu-latest
+    permissions:
+      name: Verify Vercel Org ID
+
+      on:
+        workflow_dispatch: {}
+
+      jobs:
+        verify-org:
+          runs-on: ubuntu-latest
+          permissions:
+            actions: read
+          steps:
+            - name: Check environment
+              run: |
+                echo "Running verification of VERCEL_ORG_ID presence (no secrets will be printed)"
+
+            - name: Validate VERCEL_ORG_ID via Vercel API
+              run: |
+                set -euo pipefail
+
+                # Verify secrets exist
+                if [ -z "${{ secrets.VERCEL_TOKEN }}" ]; then
+                  echo "VERCEL_TOKEN is not set in repository secrets. Add it first.";
+                  exit 1;
+                fi
+                if [ -z "${{ secrets.VERCEL_ORG_ID }}" ]; then
+                  echo "VERCEL_ORG_ID is not set in repository secrets. Add it first.";
+                  exit 1;
+                fi
+
+                echo "Checking if VERCEL_ORG_ID corresponds to a team..."
+                team_response=$(curl -s -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" "https://api.vercel.com/v1/teams/${{ secrets.VERCEL_ORG_ID }}" || true)
+                has_team=$(echo "$team_response" | grep -E '"id"|"name"' || true)
+                if [ -n "$has_team" ]; then
+                  echo "VERCEL_ORG_ID appears to be a valid Team ID.";
+                  echo "Team summary (redacted):";
+                  echo "$team_response" | jq '{id: .id, name: .name}' -c || true
+                  exit 0;
+                fi
+
+                echo "Not a Team ID — checking if it matches the current user id..."
+                user_response=$(curl -s -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" "https://api.vercel.com/www/user" || true)
+                user_id=$(echo "$user_response" | jq -r '.uid // .id // empty' || true)
+                if [ -n "$user_id" ] && [ "$user_id" = "${{ secrets.VERCEL_ORG_ID }}" ]; then
+                  echo "VERCEL_ORG_ID matches your user id (account-level).";
+                  echo "User summary (redacted):";
+                  echo "$user_response" | jq '{id: .uid, username: .username, name: .name}' -c || true
+                  exit 0;
+                fi
+
+                echo "VERCEL_ORG_ID did not match a team nor the current user id."
+                echo "If you manage multiple teams, list them with: curl -s -H \"Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}\" https://api.vercel.com/v1/teams | jq '.teams[] | {id: .id, name: .name}'"
+                exit 2
