@@ -1,0 +1,62 @@
+name: Check Upstash connectivity
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  upstash-check:
+    name: Upstash SET/GET check
+    runs-on: ubuntu-latest
+    env:
+      UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+      UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+    steps:
+      - name: Check environment
+        run: |
+          echo "Checking that secrets are present..."
+          if [ -z "$UPSTASH_REDIS_REST_URL" ] || [ -z "$UPSTASH_REDIS_REST_TOKEN" ]; then
+            echo "Missing UPSTASH secrets. Add UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to repo secrets.";
+            exit 1
+          fi
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Run SET and GET against Upstash
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEY="gh-upstash-check-$(date +%s)"
+          PAYLOAD='{"value":"{\"ok\":true}","ex":60}'
+
+          echo "Running SET"
+          set_resp=$(curl -s -w "HTTP_STATUS:%{http_code}" -X POST "$UPSTASH_REDIS_REST_URL/set/$KEY" \
+            -H "Authorization: Bearer $UPSTASH_REDIS_REST_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD") || true
+
+          http_status=$(echo "$set_resp" | tr -d '\r' | sed -n 's/.*HTTP_STATUS:\([0-9]*\)/\1/p')
+          echo "SET HTTP status: $http_status"
+          if [ "$http_status" != "200" ]; then
+            echo "SET failed: $set_resp"; exit 1
+          fi
+
+          echo "Running GET"
+          get_resp=$(curl -s -w "HTTP_STATUS:%{http_code}" -X POST "$UPSTASH_REDIS_REST_URL/get/$KEY" \
+            -H "Authorization: Bearer $UPSTASH_REDIS_REST_TOKEN" \
+            -H "Content-Type: application/json") || true
+          http_status_get=$(echo "$get_resp" | tr -d '\r' | sed -n 's/.*HTTP_STATUS:\([0-9]*\)/\1/p')
+          echo "GET HTTP status: $http_status_get"
+          if [ "$http_status_get" != "200" ]; then
+            echo "GET failed: $get_resp"; exit 1
+          fi
+
+          # Try to detect our value in the response
+          body=$(echo "$get_resp" | sed 's/HTTP_STATUS:[0-9]*$//')
+          echo "Response body: $body"
+          if echo "$body" | jq -e '.result // .value' >/dev/null 2>&1; then
+            echo "Upstash GET returned a value. OK"
+            exit 0
+          else
+            echo "Upstash GET did not return expected structure: $body"; exit 1
+          fi
