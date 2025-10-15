@@ -308,6 +308,10 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       farmacias = [];
     });
     try {
+      // Ensure we have the user's location when possible before querying
+      if (currentPosition == null) {
+        await _ensureLocation();
+      }
     final tipo = tipoSeleccionado != null ? tipos[tipoSeleccionado!]['id'] : '';
     // Build body map similar to web: func=region, filtro, fecha (if turnos), region, hora
     final hora = _horaActual();
@@ -318,6 +322,13 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       final bodies = <Map<String, String>>[];
       final b1 = {'func': 'region', 'filtro': 'turnos', 'region': regionSeleccionada ?? '', 'hora': hora};
       final b2 = {'func': 'region', 'filtro': 'urgencia', 'region': regionSeleccionada ?? '', 'hora': hora};
+      // Include user coordinates when available so server-side logging or sorting can use them
+      if (currentPosition != null) {
+        b1['lat'] = currentPosition!.latitude.toString();
+        b1['lng'] = currentPosition!.longitude.toString();
+        b2['lat'] = currentPosition!.latitude.toString();
+        b2['lng'] = currentPosition!.longitude.toString();
+      }
       if (fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty) {
         b1['fecha'] = fechaSeleccionada!;
         b2['fecha'] = fechaSeleccionada!;
@@ -350,6 +361,10 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       if (tipo == 'turnos' && fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty) {
         bodyMap['fecha'] = fechaSeleccionada!;
       }
+      if (currentPosition != null) {
+        bodyMap['lat'] = currentPosition!.latitude.toString();
+        bodyMap['lng'] = currentPosition!.longitude.toString();
+      }
       final resp = await _postForm(bodyMap);
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
@@ -362,11 +377,42 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
     }
 
     if (farmaciasList.isEmpty) {
-      setState(() {
-        farmacias = [];
-        cargando = false;
-      });
-      return;
+      // Attempt fallbacks: try without filtro and then with 'todos' to increase chance of data
+      final tried = <String>{};
+      final fallbackFilters = ['', 'todos'];
+      for (final alt in fallbackFilters) {
+        if (tried.contains(alt)) continue;
+        tried.add(alt);
+        try {
+          final b = {'func': 'region', 'filtro': alt, 'region': regionSeleccionada ?? '', 'hora': hora};
+          if (fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty) b['fecha'] = fechaSeleccionada!;
+          if (currentPosition != null) {
+            b['lat'] = currentPosition!.latitude.toString();
+            b['lng'] = currentPosition!.longitude.toString();
+          }
+          final resp = await _postForm(b);
+          if (resp.statusCode != 200) continue;
+          final data = json.decode(resp.body);
+          if (data is Map && data['respuesta'] != null && data['respuesta']['locales'] != null) {
+            farmaciasList = List<dynamic>.from(data['respuesta']['locales']);
+            if (farmaciasList.isNotEmpty) break;
+          } else if (data is Map && data['respuesta'] != null && data['respuesta'] is List) {
+            farmaciasList = List<dynamic>.from(data['respuesta']);
+            if (farmaciasList.isNotEmpty) break;
+          } else if (data is List) {
+            farmaciasList = List<dynamic>.from(data);
+            if (farmaciasList.isNotEmpty) break;
+          }
+        } catch (_) {}
+      }
+
+      if (farmaciasList.isEmpty) {
+        setState(() {
+          farmacias = [];
+          cargando = false;
+        });
+        return;
+      }
     }
 
         // If we have a current position, compute distances and sort nearest->farthest
@@ -499,20 +545,36 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       double aDist = double.infinity;
       double bDist = double.infinity;
       try {
-        final aLat = (a['lt'] ?? a['lat'])?.toString();
-        final aLng = (a['lg'] ?? a['lng'])?.toString();
-        aDist = double.parse(aLat ?? 'nan');
-        // parsed above is actually lat; recompute properly
-        final alat = double.parse(aLat ?? 'nan');
-        final alng = double.parse(aLng ?? 'nan');
-        aDist = _distanceKm(lat, lng, alat, alng);
+        final aLatRaw = (a['lt'] ?? a['lat'] ?? a['local_lat'])?.toString();
+        final aLngRaw = (a['lg'] ?? a['lng'] ?? a['local_lng'])?.toString();
+        final parseCoord = (String? s) {
+          if (s == null) return double.nan;
+          final cleaned = s.trim().replaceAll(',', '.');
+          final m = RegExp(r'-?\d+(?:\.\d+)?').firstMatch(cleaned);
+          if (m == null) return double.nan;
+          return double.tryParse(m.group(0) ?? '') ?? double.nan;
+        };
+        final alat = parseCoord(aLatRaw);
+        final alng = parseCoord(aLngRaw);
+        if (!alat.isNaN && !alng.isNaN) {
+          aDist = _distanceKm(lat, lng, alat, alng);
+        }
       } catch (_) {}
       try {
-        final bLat = (b['lt'] ?? b['lat'])?.toString();
-        final bLng = (b['lg'] ?? b['lng'])?.toString();
-        final blat = double.parse(bLat ?? 'nan');
-        final blng = double.parse(bLng ?? 'nan');
-        bDist = _distanceKm(lat, lng, blat, blng);
+        final bLatRaw = (b['lt'] ?? b['lat'] ?? b['local_lat'])?.toString();
+        final bLngRaw = (b['lg'] ?? b['lng'] ?? b['local_lng'])?.toString();
+        final parseCoord = (String? s) {
+          if (s == null) return double.nan;
+          final cleaned = s.trim().replaceAll(',', '.');
+          final m = RegExp(r'-?\d+(?:\.\d+)?').firstMatch(cleaned);
+          if (m == null) return double.nan;
+          return double.tryParse(m.group(0) ?? '') ?? double.nan;
+        };
+        final blat = parseCoord(bLatRaw);
+        final blng = parseCoord(bLngRaw);
+        if (!blat.isNaN && !blng.isNaN) {
+          bDist = _distanceKm(lat, lng, blat, blng);
+        }
       } catch (_) {}
       return aDist.compareTo(bDist);
     });

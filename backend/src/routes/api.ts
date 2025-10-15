@@ -320,9 +320,23 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
             } catch (e) {
               console.log('[API][pharmacies] farmanet status=' + response.status + ' (could not stringify preview)');
             }
-            // Farmanet may return an envelope like { correcto: true, respuesta: { locales: [...] } }
-            if (data && typeof data === 'object' && (data as any).respuesta && Array.isArray((data as any).respuesta.locales)) {
-              data = (data as any).respuesta.locales;
+            // Farmanet responses vary. Prefer data.respuesta.locales, then data.respuesta if it's an array, then data itself if it's an array.
+            try {
+              if (data && typeof data === 'object') {
+                if ((data as any).respuesta && Array.isArray((data as any).respuesta.locales)) {
+                  data = (data as any).respuesta.locales;
+                } else if ((data as any).respuesta && Array.isArray((data as any).respuesta)) {
+                  console.log('[API][pharmacies] Using data.respuesta as fallback (array)');
+                  data = (data as any).respuesta;
+                } else if (Array.isArray(data)) {
+                  console.log('[API][pharmacies] Using top-level data array');
+                  // keep data as-is
+                } else if ((data as any).respuesta && (data as any).respuesta.locales && Array.isArray((data as any).respuesta.locales) === false) {
+                  // respuesta exists but not locales array — leave data as-is and let downstream handle emptiness
+                }
+              }
+            } catch (e) {
+              console.error('[API][pharmacies] error normalizing farmanet response', e);
             }
             if (!Array.isArray(data)) {
               console.error('[API][pharmacies] La respuesta NO es un array:', data);
@@ -346,9 +360,23 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
         if (lat !== undefined && lng !== undefined && !isNaN(Number(lat)) && !isNaN(Number(lng))) {
           const userLat = Number(lat);
           const userLng = Number(lng);
+          // Helper to parse coordinates robustly: accepts strings with comma decimals, extra chars, etc.
+          const parseCoord = (v: any): number => {
+            if (v === null || v === undefined) return NaN;
+            // keep sign, digits, dot/comma; change comma to dot
+            const s = String(v).trim().replace(',', '.').match(/-?[0-9]+(?:\.[0-9]+)?/);
+            if (!s) return NaN;
+            const n = parseFloat(s[0]);
+            return isNaN(n) ? NaN : n;
+          };
+
           result = result.slice().sort((a: any, b: any) => {
-            const dA = distance(userLat, userLng, parseFloat(a.local_lat || a.lat || a.lt), parseFloat(a.local_lng || a.lng || a.lg));
-            const dB = distance(userLat, userLng, parseFloat(b.local_lat || b.lat || b.lt), parseFloat(b.local_lng || b.lng || b.lg));
+            const aLat = parseCoord(a.local_lat ?? a.lat ?? a.lt);
+            const aLng = parseCoord(a.local_lng ?? a.lng ?? a.lg);
+            const bLat = parseCoord(b.local_lat ?? b.lat ?? b.lt);
+            const bLng = parseCoord(b.local_lng ?? b.lng ?? b.lg);
+            const dA = distance(userLat, userLng, aLat, aLng);
+            const dB = distance(userLat, userLng, bLat, bLng);
             return dA - dB;
           });
         }
