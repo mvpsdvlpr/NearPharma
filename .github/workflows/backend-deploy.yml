@@ -38,6 +38,12 @@ jobs:
           name: backend-dist
           path: backend/dist
 
+      - name: Install Vercel CLI and jq
+        run: |
+          # ensure jq is available for JSON parsing and install vercel CLI
+          sudo apt-get update && sudo apt-get install -y jq
+          npm install -g vercel@28
+
       - name: Deploy to Vercel (preview or prod) and run smoke test
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
