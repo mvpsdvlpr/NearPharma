@@ -2,12 +2,18 @@ import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { createApiRouter, handleFarmanetCompat } from './routes/api';
 import axios from 'axios';
 import { sanitizeInputs } from './middleware/security';
 
 const app = express();
+
+// Trust proxy (required when behind Vercel/Proxies so express-rate-limit can identify IPs)
+// Use boolean true to trust the first proxy or a numeric value if you want to
+// trust a specific number of proxies. Vercel/Cloud providers typically require
+// trusting the proxy so X-Forwarded-For is considered.
+app.set('trust proxy', true);
 
 // Security HTTP headers
 app.use(helmet());
@@ -21,10 +27,29 @@ app.use(cors({
 // Logging
 app.use(morgan('dev'));
 
-// Rate limiting
+// Rate limiting — use a robust keyGenerator that tolerates forwarded headers
 const limiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
   max: 60, // limit each IP to 60 requests per windowMs
+  keyGenerator: (req: Request) => {
+    // express-rate-limit's ipKeyGenerator expects either the request object
+    // or a string IP. Passing the whole request lets the helper correctly
+    // handle IPv6 and proxy headers when `trust proxy` is enabled.
+    try {
+      const xff = (req.headers['x-forwarded-for'] || '') as string;
+      if (xff) {
+        const first = xff.split(',')[0].trim();
+        if (first) return ipKeyGenerator(first);
+      }
+    } catch (e) {
+      // ignore and fall through
+    }
+    // Prefer passing the whole request to ipKeyGenerator so it uses
+    // the same logic express-rate-limit expects (handles IPv6 masks).
+    // If req is missing an ip, fallback to empty string.
+    // @ts-expect-error ipKeyGenerator accepts Request or string at runtime
+    return ipKeyGenerator(req);
+  }
 });
 app.use(limiter);
 
@@ -53,8 +78,18 @@ if (_allowDebug) {
   app.get('/mfarmacias/debug/ping', (req: Request, res: Response) => {
     res.json({ ok: true, now: new Date().toISOString(), env: process.env.NODE_ENV || 'dev' });
   });
+  app.get('/mfarmacias/debug/cache-metrics', (req: Request, res: Response) => {
+    try {
+      const router: any = apiRouter as any;
+      const cache: any = router._cache;
+      if (!cache) return res.status(404).json({ ok: false, error: 'No cache exposed' });
+      return res.json({ ok: true, metrics: cache.getMetrics ? cache.getMetrics() : null });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: String(e) });
+    }
+  });
   app.get('/mfarmacias/debug/farmanet', async (req: Request, res: Response) => {
-  const func = String(req.query.func || 'locales_regiones');
+  const func = String(req.query.func || 'regiones');
   const region = req.query.region as string | undefined;
   const API_BASE = process.env.FARMANET_API_URL || 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php';
   try {

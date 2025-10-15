@@ -191,9 +191,15 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
     if (widget.apiClient != null) {
       return widget.apiClient!.postForm(body);
     }
+    // When no ApiClient is injected, create a short-lived ApiClient so we get
+    // consistent request/response logging (ApiClient.postForm logs requests).
     final apiBase = await _apiBase();
-    final url = Uri.parse('$apiBase/mfarmacias/mapa.php');
-    return await http.post(url, headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: body);
+    final client = ApiClient(baseUrl: apiBase);
+    try {
+      return await client.postForm(body);
+    } finally {
+      client.close();
+    }
   }
 
   Future<void> _loadFiltros() async {
@@ -302,6 +308,10 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       farmacias = [];
     });
     try {
+      // Ensure we have the user's location when possible before querying
+      if (currentPosition == null) {
+        await _ensureLocation();
+      }
     final tipo = tipoSeleccionado != null ? tipos[tipoSeleccionado!]['id'] : '';
     // Build body map similar to web: func=region, filtro, fecha (if turnos), region, hora
     final hora = _horaActual();
@@ -312,6 +322,13 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       final bodies = <Map<String, String>>[];
       final b1 = {'func': 'region', 'filtro': 'turnos', 'region': regionSeleccionada ?? '', 'hora': hora};
       final b2 = {'func': 'region', 'filtro': 'urgencia', 'region': regionSeleccionada ?? '', 'hora': hora};
+      // Include user coordinates when available so server-side logging or sorting can use them
+      if (currentPosition != null) {
+        b1['lat'] = currentPosition!.latitude.toString();
+        b1['lng'] = currentPosition!.longitude.toString();
+        b2['lat'] = currentPosition!.latitude.toString();
+        b2['lng'] = currentPosition!.longitude.toString();
+      }
       if (fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty) {
         b1['fecha'] = fechaSeleccionada!;
         b2['fecha'] = fechaSeleccionada!;
@@ -344,6 +361,10 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       if (tipo == 'turnos' && fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty) {
         bodyMap['fecha'] = fechaSeleccionada!;
       }
+      if (currentPosition != null) {
+        bodyMap['lat'] = currentPosition!.latitude.toString();
+        bodyMap['lng'] = currentPosition!.longitude.toString();
+      }
       final resp = await _postForm(bodyMap);
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
@@ -356,11 +377,42 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
     }
 
     if (farmaciasList.isEmpty) {
-      setState(() {
-        farmacias = [];
-        cargando = false;
-      });
-      return;
+      // Attempt fallbacks: try without filtro and then with 'todos' to increase chance of data
+      final tried = <String>{};
+      final fallbackFilters = ['', 'todos'];
+      for (final alt in fallbackFilters) {
+        if (tried.contains(alt)) continue;
+        tried.add(alt);
+        try {
+          final b = {'func': 'region', 'filtro': alt, 'region': regionSeleccionada ?? '', 'hora': hora};
+          if (fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty) b['fecha'] = fechaSeleccionada!;
+          if (currentPosition != null) {
+            b['lat'] = currentPosition!.latitude.toString();
+            b['lng'] = currentPosition!.longitude.toString();
+          }
+          final resp = await _postForm(b);
+          if (resp.statusCode != 200) continue;
+          final data = json.decode(resp.body);
+          if (data is Map && data['respuesta'] != null && data['respuesta']['locales'] != null) {
+            farmaciasList = List<dynamic>.from(data['respuesta']['locales']);
+            if (farmaciasList.isNotEmpty) break;
+          } else if (data is Map && data['respuesta'] != null && data['respuesta'] is List) {
+            farmaciasList = List<dynamic>.from(data['respuesta']);
+            if (farmaciasList.isNotEmpty) break;
+          } else if (data is List) {
+            farmaciasList = List<dynamic>.from(data);
+            if (farmaciasList.isNotEmpty) break;
+          }
+        } catch (_) {}
+      }
+
+      if (farmaciasList.isEmpty) {
+        setState(() {
+          farmacias = [];
+          cargando = false;
+        });
+        return;
+      }
     }
 
         // If we have a current position, compute distances and sort nearest->farthest
@@ -373,27 +425,40 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
     final detailed = await Future.wait(futures);
 
     // Ensure final displayed list is ordered by distance to the user when possible.
-    if (currentPosition != null && detailed.isNotEmpty) {
-      // detailed items are maps with 'f' containing the farmacia info; map to raw f for sorting
-      final mapped = detailed.map((d) => d['f'] ?? d['raw'] ?? d).toList();
-  final sorted = sortByProximity(mapped, currentPosition!.latitude, currentPosition!.longitude);
-      // Reorder detailed to match the sorted 'f' order by matching identifiers (prefer 'im' or 'id')
-      Map<String, int> idToIndex = {};
-      for (int i = 0; i < sorted.length; i++) {
+      // If a comuna is selected, filter the detailed results by that comuna using the detailed 'f' object
+      final filteredDetailed = detailed.where((d) {
         try {
-          final s = sorted[i];
-          final id = (s['im'] ?? s['id'] ?? i).toString();
-          idToIndex[id] = i;
+          final f = d['f'] ?? d['raw'] ?? d;
+          final targetComunaId = comunaSeleccionada?.toString() ?? '';
+          final targetComunaName = comunasMap[targetComunaId] ?? '';
+
+          // Check comuna id
+          final cm = (f['cm'] ?? f['comuna'] ?? f['comuna_id'] ?? f['comunaId'])?.toString();
+          if (cm != null && cm == targetComunaId) return true;
+
+          // Check comuna name
+          final cname = (f['comuna_nombre'] ?? f['comunaNombre'] ?? f['comuna_nombre_local'] ?? f['comuna'])?.toString() ?? '';
+          if (cname.toLowerCase().contains(targetComunaName.toLowerCase())) return true;
+
+          // Check address
+          final dr = (f['dr'] ?? f['direccion'] ?? f['local_dr'] ?? f['local_direccion'])?.toString() ?? '';
+          if (dr.toLowerCase().contains(targetComunaName.toLowerCase())) return true;
         } catch (_) {}
-      }
-      detailed.sort((a, b) {
-        final aRaw = a['f'] ?? a['raw'] ?? a;
-        final bRaw = b['f'] ?? b['raw'] ?? b;
-        final aId = (aRaw['im'] ?? aRaw['id'] ?? '').toString();
-        final bId = (bRaw['im'] ?? bRaw['id'] ?? '').toString();
-        final ai = idToIndex.containsKey(aId) ? idToIndex[aId]! : 9223372036854775807;
-        final bi = idToIndex.containsKey(bId) ? idToIndex[bId]! : 9223372036854775807;
-        return ai.compareTo(bi);
+        return false;
+      }).toList();
+
+      // Use filteredDetailed instead of detailed
+      if (currentPosition != null && filteredDetailed.isNotEmpty) {
+      final mapped = filteredDetailed.map((d) => d['f'] ?? d['raw'] ?? d).toList();
+      final sorted = sortByProximity(mapped, currentPosition!.latitude, currentPosition!.longitude);
+      setState(() {
+        farmacias = sorted;
+        cargando = false;
+      });
+    } else {
+      setState(() {
+        farmacias = [];
+        cargando = false;
       });
     }
 
@@ -493,20 +558,36 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       double aDist = double.infinity;
       double bDist = double.infinity;
       try {
-        final aLat = (a['lt'] ?? a['lat'])?.toString();
-        final aLng = (a['lg'] ?? a['lng'])?.toString();
-        aDist = double.parse(aLat ?? 'nan');
-        // parsed above is actually lat; recompute properly
-        final alat = double.parse(aLat ?? 'nan');
-        final alng = double.parse(aLng ?? 'nan');
-        aDist = _distanceKm(lat, lng, alat, alng);
+        final aLatRaw = (a['lt'] ?? a['lat'] ?? a['local_lat'])?.toString();
+        final aLngRaw = (a['lg'] ?? a['lng'] ?? a['local_lng'])?.toString();
+        final parseCoord = (String? s) {
+          if (s == null) return double.nan;
+          final cleaned = s.trim().replaceAll(',', '.');
+          final m = RegExp(r'-?\d+(?:\.\d+)?').firstMatch(cleaned);
+          if (m == null) return double.nan;
+          return double.tryParse(m.group(0) ?? '') ?? double.nan;
+        };
+        final alat = parseCoord(aLatRaw);
+        final alng = parseCoord(aLngRaw);
+        if (!alat.isNaN && !alng.isNaN) {
+          aDist = _distanceKm(lat, lng, alat, alng);
+        }
       } catch (_) {}
       try {
-        final bLat = (b['lt'] ?? b['lat'])?.toString();
-        final bLng = (b['lg'] ?? b['lng'])?.toString();
-        final blat = double.parse(bLat ?? 'nan');
-        final blng = double.parse(bLng ?? 'nan');
-        bDist = _distanceKm(lat, lng, blat, blng);
+        final bLatRaw = (b['lt'] ?? b['lat'] ?? b['local_lat'])?.toString();
+        final bLngRaw = (b['lg'] ?? b['lng'] ?? b['local_lng'])?.toString();
+        final parseCoord = (String? s) {
+          if (s == null) return double.nan;
+          final cleaned = s.trim().replaceAll(',', '.');
+          final m = RegExp(r'-?\d+(?:\.\d+)?').firstMatch(cleaned);
+          if (m == null) return double.nan;
+          return double.tryParse(m.group(0) ?? '') ?? double.nan;
+        };
+        final blat = parseCoord(bLatRaw);
+        final blng = parseCoord(bLngRaw);
+        if (!blat.isNaN && !blng.isNaN) {
+          bDist = _distanceKm(lat, lng, blat, blng);
+        }
       } catch (_) {}
       return aDist.compareTo(bDist);
     });

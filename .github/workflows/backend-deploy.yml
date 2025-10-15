@@ -1,0 +1,76 @@
+name: Backend Deploy (Vercel)
+
+on:
+  workflow_run:
+    workflows: ["Backend CI"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  preview-and-prod:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install deps
+        working-directory: backend
+        run: npm ci
+
+      - name: Build
+        working-directory: backend
+        run: npm run vercel-build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-dist
+          path: backend/dist
+
+      - name: Deploy to Vercel (preview or prod) and run smoke test
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "Vercel secrets missing — skipping deploy and smoke test";
+            exit 0;
+          fi
+          cd backend
+          set -e
+          # Deploy and capture JSON output (requires vercel CLI with --json support)
+          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+            echo "Deploying to production..."
+            out=$(vercel --prod --yes --token $VERCEL_TOKEN --confirm --json)
+          else
+            echo "Deploying preview..."
+            out=$(vercel --confirm --token $VERCEL_TOKEN --yes --json)
+          fi
+          echo "vercel output: $out"
+          # Try to parse the URL from the JSON output
+          url=$(echo "$out" | jq -r '.[0].url // .url // empty' || true)
+          if [ -z "$url" ]; then
+            echo "No URL returned by vercel CLI, skipping smoke test.";
+            exit 0;
+          fi
+          echo "Running smoke test against: $url/mfarmacias/debug/ping"
+          # Wait a couple seconds for the deploy to settle
+          sleep 3
+          HTTP_STATUS=$(curl -s -o /dev/stderr -w "%{http_code}" "$url/mfarmacias/debug/ping" || true)
+          echo "Smoke test status: $HTTP_STATUS"
+          if [[ "$HTTP_STATUS" != "200" ]]; then
+            echo "Smoke test failed (status $HTTP_STATUS)";
+            exit 1;
+          fi
