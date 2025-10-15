@@ -14,7 +14,6 @@ jobs:
   preview-and-prod:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -77,6 +76,9 @@ jobs:
             echo "No URL returned by vercel CLI, skipping smoke test.";
             exit 0;
           fi
+
+          # Expose the deployed URL as a workflow output for easier follow-up checks
+          echo "deploy_url=$url" >> "$GITHUB_OUTPUT"
 
           echo "Running smoke test against: $url/mfarmacias/debug/ping"
           # Give the deployment a few seconds to finish
