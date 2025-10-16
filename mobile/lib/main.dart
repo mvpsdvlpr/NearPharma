@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'src/config.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'api_client.dart';
 import 'package:geolocator/geolocator.dart';
@@ -183,8 +184,10 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
   }
 
   Future<String> _apiBase() async {
-    await dotenv.load();
-    return dotenv.env['API_BASE_URL'] ?? 'http://localhost:3001';
+    // Prefer compile-time --dart-define (String.fromEnvironment), then
+    // values from dotenv, then a safe localhost fallback. dotenv is already
+    // loaded in main() so AppConfig can safely read it.
+    return AppConfig.apiBase();
   }
 
   Future<http.Response> _postForm(Map<String, String> body) async {
@@ -724,11 +727,26 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
           final f = fechas.first;
           pick = f is Map && f['id'] != null ? f['id'].toString() : f.toString();
         }
-        setState(() { fechaSeleccionada = pick; });
+        setState(() {
+          fechaSeleccionada = pick;
+          // Reset region/comuna and results when fecha is programmatically set
+          regionSeleccionada = null;
+          comunaSeleccionada = null;
+          comunas = [];
+          farmacias = [];
+          error = null;
+        });
       }
     } else {
-      // hide fecha: clear selection
-      setState(() { fechaSeleccionada = null; });
+      // hide fecha: clear selection and reset related filters
+      setState(() {
+        fechaSeleccionada = null;
+        regionSeleccionada = null;
+        comunaSeleccionada = null;
+        comunas = [];
+        farmacias = [];
+        error = null;
+      });
     }
 
     // Reload regiones (web code reloads regiones after tipo change)
@@ -743,8 +761,16 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
   Future<void> buscarFarmaciasPublic({int? tipoIndex, String? regionId, String? comunaId, String? fechaId}) async {
     setState(() {
       tipoSeleccionado = tipoIndex;
-      regionSeleccionada = regionId;
-      comunaSeleccionada = comunaId;
+      // If fechaId is provided but region/comuna are not, reset those filters so
+      // a fecha-only change clears region/comuna as requested.
+      if (fechaId != null && regionId == null && comunaId == null) {
+        regionSeleccionada = null;
+        comunaSeleccionada = null;
+        comunas = [];
+      } else {
+        regionSeleccionada = regionId;
+        comunaSeleccionada = comunaId;
+      }
       fechaSeleccionada = fechaId;
       // clear previous results
       farmacias = [];
@@ -890,7 +916,22 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
                                   return DropdownMenuItem(value: label, child: Text(label));
                                 }).toList(),
                                 // After choosing fecha, set and try search
-                                onChanged: (v) { setState(() { fechaSeleccionada = v; }); WidgetsBinding.instance.addPostFrameCallback((_) => _maybeBuscar()); },
+                                // When fecha changes we must reset all other filters (region, comuna, tipo)
+                                onChanged: (v) {
+                                  setState(() {
+                                    fechaSeleccionada = v;
+                                    // Reset other filters when fecha changes
+                                    regionSeleccionada = null;
+                                    comunaSeleccionada = null;
+                                    comunas = [];
+                                    // Optionally reset tipo selection to default (turnos) - keep existing behavior: app is filtered to 'turnos'
+                                    // tipoSeleccionado = null; // uncomment if you want to clear tipo
+                                    // Clear previous results and errors
+                                    farmacias = [];
+                                    error = null;
+                                  });
+                                  WidgetsBinding.instance.addPostFrameCallback((_) => _maybeBuscar());
+                                },
                                 decoration: const InputDecoration(labelText: 'Fecha de turno'),
                               ),
                     ),
