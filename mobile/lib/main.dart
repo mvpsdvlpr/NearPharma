@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'src/config.dart';
+import 'src/filter_utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'api_client.dart';
 import 'package:geolocator/geolocator.dart';
@@ -159,6 +160,23 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
   void dispose() {
     _clockTimer?.cancel();
     super.dispose();
+  }
+
+  // Central handler for when a fecha is selected by the user via UI.
+  // Extracted so tests can call it directly without needing to interact with
+  // overlay dropdowns. Keeps UI behavior identical to previous implementation.
+  void onFechaSelected(String? v) {
+    setState(() {
+      fechaSeleccionada = v;
+      // Use pure helper to compute reset fields (keeps logic testable)
+      final reset = resetFiltersForFechaChange({});
+      regionSeleccionada = reset['regionSeleccionada'] as String?;
+      comunaSeleccionada = reset['comunaSeleccionada'] as String?;
+      comunas = List<dynamic>.from(reset['comunas'] as List<dynamic>);
+      farmacias = List<dynamic>.from(reset['farmacias'] as List<dynamic>);
+      error = reset['error'];
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeBuscar());
   }
 
   // Load global comunas map used for lookups (equivalent to map.js initial comunas call)
@@ -758,7 +776,13 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
 
   // Public helper for tests: set selections and directly trigger the search.
   // This avoids interacting with dropdown overlays in widget tests and speeds them up.
-  Future<void> buscarFarmaciasPublic({int? tipoIndex, String? regionId, String? comunaId, String? fechaId}) async {
+  //
+  // Parameters:
+  // - tipoIndex, regionId, comunaId, fechaId: same as the UI selections
+  // - skipFetch (default false): when true, the helper will NOT call `_buscarFarmacias()`
+  //   and therefore avoids network calls. Use this in unit/widget tests that only
+  //   need to verify state changes (for example, that changing fecha resets filters).
+  Future<void> buscarFarmaciasPublic({int? tipoIndex, String? regionId, String? comunaId, String? fechaId, bool skipFetch = false}) async {
     setState(() {
       tipoSeleccionado = tipoIndex;
       // If fechaId is provided but region/comuna are not, reset those filters so
@@ -776,7 +800,7 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       farmacias = [];
       error = null;
     });
-    await _buscarFarmacias();
+    if (!skipFetch) await _buscarFarmacias();
   }
 
   Future<void> _ensureLocation() async {
@@ -856,7 +880,7 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
             },
           ),
           ListTile(
-            leading: SizedBox(width: 28, height: 28, child: SvgPicture.asset('assets/img/waze_icon.svg', semanticsLabel: 'Waze', placeholderBuilder: (_) => const Icon(Icons.navigation, size: 28))),
+            leading: SizedBox(width: 28, height: 28, child: SvgPicture.asset('assets/img/waze_icon.svg', semanticsLabel: 'Waze', fit: BoxFit.contain, placeholderBuilder: (_) => const Icon(Icons.navigation, size: 28))),
             title: const Text('Abrir en Waze'),
             onTap: () async {
               Navigator.of(ctx).pop();
@@ -906,7 +930,7 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
                             ? const Center(child: CircularProgressIndicator())
               : DropdownButtonFormField<String>(
                 isExpanded: true,
-                                initialValue: fechaSeleccionada,
+                                                initialValue: fechaSeleccionada,
                                 items: fechas.map<DropdownMenuItem<String>>((f) {
                                   if (f is Map && f['id'] != null && f['label'] != null) {
                                     return DropdownMenuItem(value: f['id'], child: Text(f['label']));
@@ -915,23 +939,8 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
                                   final label = f is String ? f : f.toString();
                                   return DropdownMenuItem(value: label, child: Text(label));
                                 }).toList(),
-                                // After choosing fecha, set and try search
-                                // When fecha changes we must reset all other filters (region, comuna, tipo)
-                                onChanged: (v) {
-                                  setState(() {
-                                    fechaSeleccionada = v;
-                                    // Reset other filters when fecha changes
-                                    regionSeleccionada = null;
-                                    comunaSeleccionada = null;
-                                    comunas = [];
-                                    // Optionally reset tipo selection to default (turnos) - keep existing behavior: app is filtered to 'turnos'
-                                    // tipoSeleccionado = null; // uncomment if you want to clear tipo
-                                    // Clear previous results and errors
-                                    farmacias = [];
-                                    error = null;
-                                  });
-                                  WidgetsBinding.instance.addPostFrameCallback((_) => _maybeBuscar());
-                                },
+                                // After choosing fecha, delegate to handler
+                                onChanged: onFechaSelected,
                                 decoration: const InputDecoration(labelText: 'Fecha de turno'),
                               ),
                     ),
