@@ -1,0 +1,22 @@
+name: Mobile tests
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ feature/reset-filters-on-fecha-change ]
+
+jobs:
+  flutter-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 'stable'
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Run tests
+        run: flutter test --coverage
+        working-directory: mobile
