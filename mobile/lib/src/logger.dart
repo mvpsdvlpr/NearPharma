@@ -22,16 +22,21 @@ class AppLogger {
   }
 
   static void d(String message, [dynamic error, StackTrace? st]) {
-    _logger.d(message, error, st);
-    if (kDebugMode) print('[DEBUG] $message');
+    if (kDebugMode) {
+      _logger.d(message, error, st);
+      print('[DEBUG] $message');
+    }
   }
 
   static void i(String message, [dynamic error, StackTrace? st]) {
-    _logger.i(message, error, st);
-    if (kDebugMode) print('[INFO] $message');
+    if (kDebugMode) {
+      _logger.i(message, error, st);
+      print('[INFO] $message');
+    }
   }
 
   static void e(String message, [dynamic error, StackTrace? st]) {
+    // Always record errors to the internal logger but avoid printing in release.
     _logger.e(message, error, st);
     if (kDebugMode) print('[ERROR] $message');
   }
