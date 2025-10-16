@@ -1,32 +1,48 @@
 This folder contains the app icon source files and generated assets.ICON ASSETS
+```markdown
+# App launcher icon sources
 
+This folder holds the master icon files used to generate platform launcher icons for the mobile app.
 
+Expected files (examples):
 
-Files expected:This folder contains the master icon files used to generate platform launcher icons for the mobile app.
+- `icon_master.png` — full icon (high-resolution PNG) used as fallback/static icon.
+- `adaptive_foreground.png` — symbol only (transparent background) used as Android adaptive icon foreground.
+- `adaptive_background.png` — plain background or subtle texture used as Android adaptive icon background.
 
-- icon_master.png             (full icon used as fallback/static)
+## Reproducible steps (recommended)
 
-- adaptive_foreground.png     (symbol only, transparent background)Files expected:
+1. Install ImageMagick (the generator script uses the `magick` CLI):
 
-- adaptive_background.png     (plain background or subtle texture)- icon_master.png         # full icon (used as fallback/static icon)
+   sudo apt-get install -y imagemagick
 
-- adaptive_foreground.png # symbol only (transparent background) for Android adaptive icons (foreground layer)
+2. From the repository root run the Makefile target in `mobile/` (this runs the generator and then `flutter_launcher_icons`):
 
-Use the script in ../tools/generate_icons.sh to generate common sizes:- adaptive_background.png # simple background (solid color or subtle gradient) for Android adaptive icons (background layer)
+   cd mobile
+   make icons
 
+What `make icons` does:
 
+- Calls `tools/generate_icons.sh` which attempts to create `adaptive_foreground.png` and `adaptive_background.png` from `icon_master.png`.
+- Runs `flutter pub run flutter_launcher_icons:main` to generate iOS/Android icons and populate the respective asset catalogs.
 
-  cd mobile/toolsHow to regenerate
+## Manual alternative
 
-  ./generate_icons.sh ../assets/icons/icon_master.png ../assets/icons/generated1. Ensure you have ImageMagick installed (magick CLI).
+If you prefer manual steps, run:
 
-2. Run from repo root:
+1) From repository root:
 
-After generating, update pubspec.yaml and run flutter_launcher_icons to produce platform icons.   cd mobile
+   mobile/tools/generate_icons.sh ../assets/icons/icon_master.png mobile/assets/icons
 
-   ../tools/generate_icons.sh
-3. Install dev dependency and run the launcher icon generator:
+2) Then from `mobile/`:
+
    flutter pub get
    flutter pub run flutter_launcher_icons:main
 
-If ImageMagick isn't available, create the three files manually and place them in this folder.
+## Notes
+
+- If ImageMagick isn't available the script falls back to copying the master PNG. That may produce non-ideal foreground/background layers; prefer to run ImageMagick or provide `adaptive_foreground.png` and `adaptive_background.png` manually.
+- Keep `icon_master.png` at high resolution (2048×2048 recommended) so generated icons look crisp on high-DPI devices.
+- Decide whether to commit generated platform assets or generate them during CI. Both approaches are valid — committing improves reproducibility for local builds; generating in CI keeps repo smaller.
+
+``` 

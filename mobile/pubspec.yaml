@@ -72,6 +72,8 @@ flutter:
     - .env
     # Optional: copy the site's `img/` folder into `mobile/assets/img/` and enable kUseBundledImages in the widget
     - assets/img/
+    # Include icon master/source files so icon generation tools can access them in CI
+    - assets/icons/
 
 # Launcher icons configuration (flutter_launcher_icons)
 flutter_icons:
