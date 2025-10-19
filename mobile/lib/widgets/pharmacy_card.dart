@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-// 'dart:typed_data' not needed explicitly; ByteData/Uint8List available via services import
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
@@ -299,7 +298,7 @@ class PharmacyCard extends StatelessWidget {
     final regionId = f['rg']?.toString() ?? '';
     final comunaNombre = comunasMap[comunaId] ?? comunaId;
     final regionNombre = regionesMap[regionId] ?? regionId;
-      final telefonoLocal = f['tl'] ?? ''; // renamed variable
+    final telefonoLocal = f['tl'] ?? ''; // renamed variable
     final horarioDia = horario['dia'] != null ? _stripHtml(horario['dia'].toString()) : '';
     final imgPath = f['img'];
   final logo = (imgPath != null && imgPath.toString().isNotEmpty)
@@ -313,7 +312,7 @@ class PharmacyCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           child: AssetSafeImage(assetPath: 'assets/img/map.png', width: 48, height: 48, fit: BoxFit.cover, semanticLabel: 'Mapa (vista previa)'),
         )
-      : AdaptiveNetworkImage(url: logo, width: 48, height: 48, fit: BoxFit.contain, disableNetworkImages: disableNetworkImages));
+  : AdaptiveNetworkImage(url: logo, width: 48, height: 48, fit: BoxFit.cover, disableNetworkImages: disableNetworkImages));
 
     String pillText = '';
     Widget iconWidget = const SizedBox.shrink();

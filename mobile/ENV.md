@@ -47,3 +47,46 @@ If you want, I can:
 - Update the example `.env.production.example` to set `API_BASE_URL` to `https://nearpharma-liard.vercel.app`.
 - Add a small CI snippet that shows how to inject the production URL using a secret and pass it to `flutter build` via `--dart-define`.
 
+CI example (GitHub Actions)
+---------------------------
+
+Below is a minimal GitHub Actions snippet showing how to inject the production API base URL stored as a repository secret (do NOT store secrets in code).
+
+1) Add a repository secret named `PROD_API_BASE_URL` with value like `https://nearpharma-liard.vercel.app`.
+
+2) Example workflow job (add to `.github/workflows/mobile-ci.yml`):
+
+```yaml
+name: Mobile CI
+
+on: [push, pull_request]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 'stable'
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Run tests
+        run: flutter test --coverage
+      - name: Build APK (unsigned, for verification)
+        env:
+          API_BASE_URL: ${{ secrets.PROD_API_BASE_URL }}
+        run: |
+          flutter build apk --release --dart-define=API_BASE_URL=${{ secrets.PROD_API_BASE_URL }}
+
+Notes:
+- This workflow builds an unsigned APK for verification. For Play Store uploads, configure signing (keystore) and only use secrets for sensitive values.
+- For iOS builds you must use a macOS runner and configure code signing (certs and provisioning profiles).
+
+If you want, I can:
+- Update the example `.env.production.example` to set `API_BASE_URL` to `https://nearpharma-liard.vercel.app`.
+- Add the actual workflow file `.github/workflows/mobile-ci.yml` in this repo (I can create it now).
+
+```
+

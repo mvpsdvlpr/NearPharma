@@ -24,6 +24,7 @@ jobs:
 
       - name: Run SET and GET against Upstash
         shell: bash
+        continue-on-error: true
         run: |
           set -euo pipefail
           KEY="gh-upstash-check-$(date +%s)"
@@ -37,9 +38,6 @@ jobs:
 
           http_status=$(echo "$set_resp" | tr -d '\r' | sed -n 's/.*HTTP_STATUS:\([0-9]*\)/\1/p')
           echo "SET HTTP status: $http_status"
-          if [ "$http_status" != "200" ]; then
-            echo "SET failed: $set_resp"; exit 1
-          fi
 
           echo "Running GET"
           get_resp=$(curl -s -w "HTTP_STATUS:%{http_code}" -X POST "$UPSTASH_REDIS_REST_URL/get/$KEY" \
@@ -47,16 +45,50 @@ jobs:
             -H "Content-Type: application/json") || true
           http_status_get=$(echo "$get_resp" | tr -d '\r' | sed -n 's/.*HTTP_STATUS:\([0-9]*\)/\1/p')
           echo "GET HTTP status: $http_status_get"
-          if [ "$http_status_get" != "200" ]; then
-            echo "GET failed: $get_resp"; exit 1
-          fi
 
           # Try to detect our value in the response
           body=$(echo "$get_resp" | sed 's/HTTP_STATUS:[0-9]*$//')
           echo "Response body: $body"
+
+          # Persist responses for later inspection
+          echo "$set_resp" > upstash_set_resp.txt || true
+          echo "$get_resp" > upstash_get_resp.txt || true
+
           if echo "$body" | jq -e '.result // .value' >/dev/null 2>&1; then
-            echo "Upstash GET returned a value. OK"
-            exit 0
+            echo "UPSTASH_CHECK_PASSED=1" > upstash_status.txt
+            # Emit a concise notice line that appears in the job summary
+            echo "::notice::Upstash check OK - SET status=$http_status GET status=$http_status_get"
           else
-            echo "Upstash GET did not return expected structure: $body"; exit 1
+            echo "UPSTASH_CHECK_PASSED=0" > upstash_status.txt
+            echo "::error::Upstash check FAILED - SET status=$http_status GET status=$http_status_get"
+            # Also print responses as notices (truncated) for quick inspection
+            echo "::notice::SET resp: ${set_resp:0:200}..."
+            echo "::notice::GET resp: ${get_resp:0:200}..."
+          fi
+
+      - name: Upload Upstash responses artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstash-responses
+          path: |
+            upstash_set_resp.txt
+            upstash_get_resp.txt
+            upstash_status.txt
+
+      - name: Fail job if Upstash check failed
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f upstash_status.txt ]; then
+            . ./upstash_status.txt || true
+            if [ "${UPSTASH_CHECK_PASSED:-0}" != "1" ]; then
+              echo "Upstash connectivity test failed (see artifact upstash-responses)"
+              exit 1
+            else
+              echo "Upstash connectivity test OK"
+            fi
+          else
+            echo "Status file missing: cannot determine Upstash check result"
+            exit 1
           fi

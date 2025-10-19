@@ -468,25 +468,24 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
         return false;
       }).toList();
 
-      // Use filteredDetailed instead of detailed
+      // Use filteredDetailed instead of detailed. If we have a position and filtered results,
+      // sort them and update state. Otherwise, fall back to showing the full detailed list
+      // (or an empty list when nothing matches). Avoid overwriting the sorted list later.
       if (currentPosition != null && filteredDetailed.isNotEmpty) {
-      final mapped = filteredDetailed.map((d) => d['f'] ?? d['raw'] ?? d).toList();
-      final sorted = sortByProximity(mapped, currentPosition!.latitude, currentPosition!.longitude);
-      setState(() {
-        farmacias = sorted;
-        cargando = false;
-      });
-    } else {
-      setState(() {
-        farmacias = [];
-        cargando = false;
-      });
-    }
-
-    setState(() {
-      farmacias = detailed;
-      cargando = false;
-    });
+        final mapped = filteredDetailed.map((d) => d['f'] ?? d['raw'] ?? d).toList();
+        final sorted = sortByProximity(mapped, currentPosition!.latitude, currentPosition!.longitude);
+        setState(() {
+          farmacias = sorted;
+          cargando = false;
+        });
+      } else {
+        setState(() {
+          // If there are no filteredDetailed results, show the raw detailed list
+          // so the UI still displays available entries.
+          farmacias = detailed.isNotEmpty ? detailed : [];
+          cargando = false;
+        });
+      }
   } catch (e) {
     setState(() {
       error = e.toString();
