@@ -264,30 +264,68 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
 
   Future<void> _loadComunas(String regionId) async {
     try {
-    final resp = await _postForm({'func': 'comunas', 'region': regionId});
+      // Try requesting comunas filtered by region first (more efficient)
+      final resp = await _postForm({'func': 'comunas', 'region': regionId});
+      List<dynamic> comunasList = [];
+      bool ok = false;
       if (resp.statusCode == 200) {
-        final data = json.decode(resp.body);
-        List<dynamic> comunasList = [];
-        if (data is Map && data['respuesta'] != null && data['respuesta'] is List) {
-          comunasList = data['respuesta'];
-        } else if (data is List) {
-          comunasList = data;
-        }
-        setState(() {
-          comunas = comunasList;
-          // build/update comunasMap for quick lookup
-          comunasMap = {};
-          for (final c in comunasList) {
-            try {
-              comunasMap[c['id'].toString()] = c['nombre'].toString();
-            } catch (_) {}
+        try {
+          final data = json.decode(resp.body);
+          if (data is Map && data['respuesta'] != null && data['respuesta'] is List) {
+            comunasList = data['respuesta'];
+            ok = true;
+          } else if (data is List) {
+            comunasList = data;
+            ok = true;
           }
-          // Do not preselect a comuna; user must choose
-          comunaSeleccionada = null;
-        });
-      } else {
-        throw Exception('Error comunas: ${resp.statusCode}');
+        } catch (_) {
+          // parsing failed, fall through to fallback
+          ok = false;
+        }
       }
+
+      if (!ok) {
+        // Fallback: request global comunas and then filter by regionId if possible
+        try {
+          final allResp = await _postForm({'func': 'comunas'});
+          if (allResp.statusCode == 200) {
+            final raw = json.decode(allResp.body);
+            List<dynamic> allList = [];
+            if (raw is Map && raw['respuesta'] != null && raw['respuesta'] is List) {
+              allList = raw['respuesta'];
+            } else if (raw is List) {
+              allList = raw;
+            }
+            // If items contain a region id field, try to filter; otherwise keep all
+            try {
+              comunasList = allList.where((c) {
+                try {
+                  final r = c['region'] ?? c['region_id'] ?? c['regionId'];
+                  if (r == null) return true; // no region info -> keep
+                  return r.toString() == regionId.toString();
+                } catch (_) {
+                  return true;
+                }
+              }).toList();
+            } catch (_) {
+              comunasList = allList;
+            }
+          }
+        } catch (_) {}
+      }
+
+      setState(() {
+        comunas = comunasList;
+        // build/update comunasMap for quick lookup
+        comunasMap = {};
+        for (final c in comunasList) {
+          try {
+            comunasMap[c['id'].toString()] = c['nombre'].toString();
+          } catch (_) {}
+        }
+        // Do not preselect a comuna; user must choose
+        comunaSeleccionada = null;
+      });
     } catch (e) {
       setState(() {
         error = e.toString();
@@ -485,6 +523,21 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
     return R * c;
   }
 
+  // Parse several coordinate formats into a double.
+  // Accepts numeric types or strings with commas, degree symbols or extra characters.
+  // Returns `null` when parsing fails.
+  double? _toDoubleCoord(dynamic v) {
+    if (v == null) return null;
+    try {
+      final s = v.toString().trim().replaceAll(',', '.');
+      // Match an optional sign, digits, optional decimal part.
+      final m = RegExp(r'-?\d+(?:\.\d+)?').firstMatch(s);
+      if (m == null) return null;
+      return double.tryParse(m.group(0) ?? '');
+    } catch (_) {
+      return null;
+    }
+  }
   /// Sort a list of farmacia-like maps by proximity to (lat,lng).
   /// Each item can have keys 'lt'/'lat' and 'lg'/'lng'. Returns a new list sorted nearest->farthest.
   List<dynamic> sortByProximity(List<dynamic> items, double lat, double lng) {
@@ -493,20 +546,18 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       double aDist = double.infinity;
       double bDist = double.infinity;
       try {
-        final aLat = (a['lt'] ?? a['lat'])?.toString();
-        final aLng = (a['lg'] ?? a['lng'])?.toString();
-        aDist = double.parse(aLat ?? 'nan');
-        // parsed above is actually lat; recompute properly
-        final alat = double.parse(aLat ?? 'nan');
-        final alng = double.parse(aLng ?? 'nan');
-        aDist = _distanceKm(lat, lng, alat, alng);
+        final aLat = _toDoubleCoord(a['lt'] ?? a['lat'] ?? a['local_lat']);
+        final aLng = _toDoubleCoord(a['lg'] ?? a['lng'] ?? a['local_lng']);
+        if (aLat != null && aLng != null) {
+          aDist = _distanceKm(lat, lng, aLat, aLng);
+        }
       } catch (_) {}
       try {
-        final bLat = (b['lt'] ?? b['lat'])?.toString();
-        final bLng = (b['lg'] ?? b['lng'])?.toString();
-        final blat = double.parse(bLat ?? 'nan');
-        final blng = double.parse(bLng ?? 'nan');
-        bDist = _distanceKm(lat, lng, blat, blng);
+        final bLat = _toDoubleCoord(b['lt'] ?? b['lat'] ?? b['local_lat']);
+        final bLng = _toDoubleCoord(b['lg'] ?? b['lng'] ?? b['local_lng']);
+        if (bLat != null && bLng != null) {
+          bDist = _distanceKm(lat, lng, bLat, bLng);
+        }
       } catch (_) {}
       return aDist.compareTo(bDist);
     });
@@ -534,10 +585,10 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
         body['fecha'] = fechaSeleccionada!;
       }
       // include lat/lng if present (map.js sends the whole lc object but im is enough for server)
-  final resp = await _postForm(body);
+      final resp = await _postForm(body);
       if (resp.statusCode == 200) {
-  // Debug: print raw local response
-  debugPrint('DEBUG local(${body['im'] ?? 'no-im'}) response: ${resp.body}');
+        // Debug: print raw local response
+        debugPrint('DEBUG local(${body['im'] ?? 'no-im'}) response: ${resp.body}');
         final data = json.decode(resp.body);
         if (data is Map && data['respuesta'] != null) {
           final localResp = data['respuesta']['local'];
@@ -569,6 +620,12 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
   // Public wrapper for tests to trigger filter loading when autoInit is false
   Future<void> loadFiltros() async {
     await _loadFiltros();
+  }
+
+  // Public test helper to load comunas for a given region. Keeps _loadComunas private but
+  // exposes a safe wrapper for tests and external callers that need to trigger it.
+  Future<void> loadComunasForTest(String regionId) async {
+    await _loadComunas(regionId);
   }
 
   /// Busca por tipo usando la misma semántica que la función `buscar(tipo)` en mapa.php.
