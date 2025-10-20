@@ -264,53 +264,68 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
 
   Future<void> _loadComunas(String regionId) async {
     try {
-    // First, try asking the backend for comunas filtered by region (preferred).
-    var resp = await _postForm({'func': 'comunas', 'region': regionId});
+      // Try requesting comunas filtered by region first (more efficient)
+      final resp = await _postForm({'func': 'comunas', 'region': regionId});
       List<dynamic> comunasList = [];
+      bool ok = false;
       if (resp.statusCode == 200) {
-        final data = json.decode(resp.body);
-        if (data is Map && data['respuesta'] != null && data['respuesta'] is List) {
-          comunasList = data['respuesta'];
-        } else if (data is List) {
-          comunasList = data;
+        try {
+          final data = json.decode(resp.body);
+          if (data is Map && data['respuesta'] != null && data['respuesta'] is List) {
+            comunasList = data['respuesta'];
+            ok = true;
+          } else if (data is List) {
+            comunasList = data;
+            ok = true;
+          }
+        } catch (_) {
+          // parsing failed, fall through to fallback
+          ok = false;
         }
       }
-      // If the region-specific call failed or returned an unexpected payload, fall back to global list and filter locally.
-      if (comunasList.isEmpty) {
+
+      if (!ok) {
+        // Fallback: request global comunas and then filter by regionId if possible
         try {
-          final globalResp = await _postForm({'func': 'comunas'});
-          if (globalResp.statusCode == 200) {
-            final gdata = json.decode(globalResp.body);
-            if (gdata is Map && gdata['respuesta'] != null && gdata['respuesta'] is List) {
-              final all = List<dynamic>.from(gdata['respuesta']);
-              // Attempt to filter by regionId if items contain a region field; if not, leave as-is.
-              comunasList = all.where((c) {
+          final allResp = await _postForm({'func': 'comunas'});
+          if (allResp.statusCode == 200) {
+            final raw = json.decode(allResp.body);
+            List<dynamic> allList = [];
+            if (raw is Map && raw['respuesta'] != null && raw['respuesta'] is List) {
+              allList = raw['respuesta'];
+            } else if (raw is List) {
+              allList = raw;
+            }
+            // If items contain a region id field, try to filter; otherwise keep all
+            try {
+              comunasList = allList.where((c) {
                 try {
-                  final cr = c is Map ? (c['region'] ?? c['region_id'] ?? c['regionId']) : null;
-                  if (cr == null) return true; // can't filter, keep
-                  return cr.toString() == regionId.toString();
+                  final r = c['region'] ?? c['region_id'] ?? c['regionId'];
+                  if (r == null) return true; // no region info -> keep
+                  return r.toString() == regionId.toString();
                 } catch (_) {
                   return true;
                 }
               }).toList();
-            } else if (gdata is List) {
-              comunasList = List<dynamic>.from(gdata);
+            } catch (_) {
+              comunasList = allList;
             }
           }
         } catch (_) {}
       }
-        setState(() {
-          comunas = comunasList;
-          // build/update comunasMap for quick lookup
-          comunasMap = {};
-          for (final c in comunasList) {
-            try {
-              comunasMap[c['id'].toString()] = c['nombre'].toString();
-            } catch (_) {}
-          }
-          // Do not preselect a comuna; user must choose
-          comunaSeleccionada = null;
-        });
+
+      setState(() {
+        comunas = comunasList;
+        // build/update comunasMap for quick lookup
+        comunasMap = {};
+        for (final c in comunasList) {
+          try {
+            comunasMap[c['id'].toString()] = c['nombre'].toString();
+          } catch (_) {}
+        }
+        // Do not preselect a comuna; user must choose
+        comunaSeleccionada = null;
+      });
     } catch (e) {
       setState(() {
         error = e.toString();
@@ -607,8 +622,9 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
     await _loadFiltros();
   }
 
-  // Public wrapper so tests can call _loadComunas (private) without reflection
-  Future<void> loadComunas(String regionId) async {
+  // Public test helper to load comunas for a given region. Keeps _loadComunas private but
+  // exposes a safe wrapper for tests and external callers that need to trigger it.
+  Future<void> loadComunasForTest(String regionId) async {
     await _loadComunas(regionId);
   }
 

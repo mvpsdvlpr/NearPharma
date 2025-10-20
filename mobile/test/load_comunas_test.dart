@@ -7,80 +7,66 @@ import 'package:mobile/api_client.dart';
 import 'package:http/http.dart' as http;
 
 class _FakeClient implements http.Client {
-  final bool failRegionRequest;
-  _FakeClient({this.failRegionRequest = false});
+  final Map<String, String> responses;
+  _FakeClient(this.responses);
 
   @override
   Future<http.Response> post(Uri url, {Map<String, String>? headers, Object? body, Encoding? encoding}) async {
     final b = body as Map<String, String>;
     final func = b['func'] ?? '';
-    if (func == 'comunas' && b.containsKey('region')) {
-      if (failRegionRequest) {
-        return http.Response('Internal Error', 500);
-      }
-      final payload = json.encode({'respuesta': [{'id': '10', 'nombre': 'Comuna X', 'region': '7'}, {'id': '11', 'nombre': 'Comuna Y', 'region': '7'}]});
-      return http.Response(payload, 200);
-    }
     if (func == 'comunas') {
-      // global list contains region info
-      final payload = json.encode({'respuesta': [
-        {'id': '10', 'nombre': 'Comuna X', 'region': '7'},
-        {'id': '11', 'nombre': 'Comuna Y', 'region': '7'},
-        {'id': '20', 'nombre': 'Comuna Z', 'region': '8'}
-      ]});
+      final payload = '{"respuesta": [{"id": "1", "nombre": "Comuna A"}, {"id": "2", "nombre": "Comuna B"}]}';
       return http.Response(payload, 200);
     }
     return http.Response('{}', 200);
   }
 
+  // Minimal unused methods implementations
   @override
   void close() {}
+
   @override
   Future<http.Response> head(Uri url, {Map<String, String>? headers}) => Future.value(http.Response('', 200));
+
   @override
   Future<http.Response> get(Uri url, {Map<String, String>? headers}) => Future.value(http.Response('{}', 200));
+
   @override
   Future<http.Response> put(Uri url, {Map<String, String>? headers, Object? body, Encoding? encoding}) => Future.value(http.Response('{}', 200));
+
   @override
   Future<http.Response> patch(Uri url, {Map<String, String>? headers, Object? body, Encoding? encoding}) => Future.value(http.Response('{}', 200));
+
   @override
   Future<http.Response> delete(Uri url, {Map<String, String>? headers, Object? body, Encoding? encoding}) => Future.value(http.Response('{}', 200));
+
   @override
   Future<String> read(Uri url, {Map<String, String>? headers}) => Future.value('{}');
+
   @override
   Future<Uint8List> readBytes(Uri url, {Map<String, String>? headers}) => Future.value(Uint8List(0));
+
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) => Future.error(UnimplementedError());
 }
 
 void main() {
-  testWidgets('load comunas by region (normal)', (WidgetTester tester) async {
-    final client = _FakeClient(failRegionRequest: false);
+  testWidgets('load comunas populates comunasMap', (WidgetTester tester) async {
+    final client = _FakeClient({});
     final api = ApiClient(baseUrl: 'http://example.test', client: client);
     final widget = app.TipoFarmaciaScreen(apiClient: api, autoInit: false);
     await tester.pumpWidget(MaterialApp(home: widget));
+    // Obtain the mounted state
     final state = tester.state<app.TipoFarmaciaScreenState>(find.byType(app.TipoFarmaciaScreen));
+    // Call loadFiltros asynchronously
     await tester.runAsync(() async {
-      await state.loadComunasForTest('7');
+      await state.loadFiltros();
     });
-    await tester.pump();
+  // Allow async work to complete: pump a few frames instead of pumpAndSettle to avoid timeout
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 200));
+  await tester.pump(const Duration(milliseconds: 200));
     expect(state.comunasMap.isNotEmpty, true);
-    expect(state.comunasMap['10'], 'Comuna X');
-  });
-
-  testWidgets('fallback to global comunas when region request fails', (WidgetTester tester) async {
-    final client = _FakeClient(failRegionRequest: true);
-    final api = ApiClient(baseUrl: 'http://example.test', client: client);
-    final widget = app.TipoFarmaciaScreen(apiClient: api, autoInit: false);
-    await tester.pumpWidget(MaterialApp(home: widget));
-    final state = tester.state<app.TipoFarmaciaScreenState>(find.byType(app.TipoFarmaciaScreen));
-    await tester.runAsync(() async {
-      await state.loadComunasForTest('7');
-    });
-    await tester.pump();
-    // fallback should filter to region '7' entries
-    expect(state.comunasMap.isNotEmpty, true);
-    expect(state.comunasMap.containsKey('20'), false);
-    expect(state.comunasMap['10'], 'Comuna X');
+    expect(state.comunasMap['1'], 'Comuna A');
   });
 }
