@@ -264,15 +264,41 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
 
   Future<void> _loadComunas(String regionId) async {
     try {
-    final resp = await _postForm({'func': 'comunas', 'region': regionId});
+    // First, try asking the backend for comunas filtered by region (preferred).
+    var resp = await _postForm({'func': 'comunas', 'region': regionId});
+      List<dynamic> comunasList = [];
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
-        List<dynamic> comunasList = [];
         if (data is Map && data['respuesta'] != null && data['respuesta'] is List) {
           comunasList = data['respuesta'];
         } else if (data is List) {
           comunasList = data;
         }
+      }
+      // If the region-specific call failed or returned an unexpected payload, fall back to global list and filter locally.
+      if (comunasList.isEmpty) {
+        try {
+          final globalResp = await _postForm({'func': 'comunas'});
+          if (globalResp.statusCode == 200) {
+            final gdata = json.decode(globalResp.body);
+            if (gdata is Map && gdata['respuesta'] != null && gdata['respuesta'] is List) {
+              final all = List<dynamic>.from(gdata['respuesta']);
+              // Attempt to filter by regionId if items contain a region field; if not, leave as-is.
+              comunasList = all.where((c) {
+                try {
+                  final cr = c is Map ? (c['region'] ?? c['region_id'] ?? c['regionId']) : null;
+                  if (cr == null) return true; // can't filter, keep
+                  return cr.toString() == regionId.toString();
+                } catch (_) {
+                  return true;
+                }
+              }).toList();
+            } else if (gdata is List) {
+              comunasList = List<dynamic>.from(gdata);
+            }
+          }
+        } catch (_) {}
+      }
         setState(() {
           comunas = comunasList;
           // build/update comunasMap for quick lookup
@@ -285,9 +311,6 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
           // Do not preselect a comuna; user must choose
           comunaSeleccionada = null;
         });
-      } else {
-        throw Exception('Error comunas: ${resp.statusCode}');
-      }
     } catch (e) {
       setState(() {
         error = e.toString();
@@ -582,6 +605,11 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
   // Public wrapper for tests to trigger filter loading when autoInit is false
   Future<void> loadFiltros() async {
     await _loadFiltros();
+  }
+
+  // Public wrapper so tests can call _loadComunas (private) without reflection
+  Future<void> loadComunas(String regionId) async {
+    await _loadComunas(regionId);
   }
 
   /// Busca por tipo usando la misma semántica que la función `buscar(tipo)` en mapa.php.
