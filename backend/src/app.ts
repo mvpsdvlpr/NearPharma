@@ -1,7 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
-import morgan from 'morgan';
+import requestLogger from './middleware/logging';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { createApiRouter, handleFarmanetCompat } from './routes/api';
 import axios from 'axios';
@@ -24,8 +24,8 @@ app.use(cors({
   methods: ['GET'],
 }));
 
-// Logging
-app.use(morgan('dev'));
+// Structured request logging
+app.use(requestLogger());
 
 // Rate limiting — use a robust keyGenerator that tolerates forwarded headers
 const limiter = rateLimit({
