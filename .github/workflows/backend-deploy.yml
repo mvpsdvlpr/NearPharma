@@ -53,16 +53,18 @@ jobs:
             echo "Vercel secrets missing — skipping deploy and smoke test";
             exit 0;
           fi
-          cd backend
           set -e
-          # Deploy and capture JSON output (requires vercel CLI with --json support)
+          # Deploy from the backend folder explicitly. Use --cwd and --local-config to
+          # make sure the Vercel CLI targets the correct project root (avoids "Root
+          # Directory does not exist" errors when the Vercel project is configured
+          # with a subdirectory).
+          VERCEL_CLI_OPTS=(--cwd backend --local-config backend/vercel.json --token "$VERCEL_TOKEN" --yes)
           if [[ "$GITHUB_REF" == refs/heads/main ]]; then
             echo "Deploying to production..."
-            # Newer vercel CLI versions removed/changed the --json flag; capture textual output instead
-            out=$(vercel --prod --yes --token "$VERCEL_TOKEN" --confirm 2>&1 || true)
+            out=$(vercel --prod "${VERCEL_CLI_OPTS[@]}" 2>&1 || true)
           else
             echo "Deploying preview..."
-            out=$(vercel --confirm --token "$VERCEL_TOKEN" --yes 2>&1 || true)
+            out=$(vercel "${VERCEL_CLI_OPTS[@]}" 2>&1 || true)
           fi
           echo "vercel output:"
           echo "$out"
