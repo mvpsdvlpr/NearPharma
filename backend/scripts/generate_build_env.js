@@ -13,7 +13,9 @@ const out = {
   RELEASE_CHANNEL: envVal('RELEASE_CHANNEL', 'stable'),
 };
 
-const contents = Object.entries(out).map(([k, v]) => `${k}=${String(v).replace(/\r?\n/g, '')}`).join('\n') + '\n';
+// Only write expected keys and avoid any other env leaking
+const allowedKeys = ['VERCEL_GIT_COMMIT_SHA', 'VERCEL_GIT_COMMIT_REF', 'BUILD_TIME', 'RELEASE_CHANNEL'];
+const contents = allowedKeys.map(k => `${k}=${String(out[k] || '').replace(/\r?\n/g, '')}`).join('\n') + '\n';
 const dest = path.resolve(__dirname, '..', '.env.build');
-fs.writeFileSync(dest, contents, { encoding: 'utf8' });
+fs.writeFileSync(dest, contents, { encoding: 'utf8', mode: 0o600 });
 console.log('[generate_build_env] wrote', dest);
