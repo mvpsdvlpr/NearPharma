@@ -264,6 +264,12 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
   const channel = (process.env.RELEASE_CHANNEL || 'stable');
       const label = `${pkgVersion} - ${channel} - build ${buildLabel}`;
 
+      const allow = (String(process.env.ALLOW_VERSION || '').toLowerCase() === 'true');
+      const isProd = (String(process.env.NODE_ENV || '').toLowerCase() === 'production');
+      if (isProd && !allow) {
+        // In production, expose minimal info unless explicitly allowed
+        return res.json({ ok: true, label, env: process.env.NODE_ENV || 'production' });
+      }
       return res.json({ ok: true, version: pkgVersion, label, commit, branch, buildTime: buildTimeIso, env: process.env.NODE_ENV || 'development' });
     } catch (err) {
       return res.status(500).json({ ok: false, error: String(err) });
