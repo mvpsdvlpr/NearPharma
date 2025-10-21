@@ -1,5 +1,38 @@
 import request from 'supertest';
 import app from '../src/app';
+import axios from 'axios';
+
+jest.mock('axios');
+const mockedAxios = axios as jest.Mocked<typeof axios>;
+
+beforeEach(() => {
+  mockedAxios.get.mockResolvedValue({ data: '', headers: {} as any, status: 200 });
+  // default POST handler returns sample responses depending on func param
+  mockedAxios.post.mockImplementation((url: any, params: any) => {
+    const p = params as URLSearchParams;
+    const func = p.get('func');
+    if (func === 'fechas') {
+      const payload = { correcto: true, respuesta: { '2025-10-20': 'Lunes 20 de Octubre', '2025-10-21': 'Martes 21 de Octubre' } };
+      return Promise.resolve({ data: Buffer.from(JSON.stringify(payload), 'utf8'), headers: { 'content-type': 'application/json' }, status: 200 } as any);
+    }
+    if (func === 'regiones') {
+      const payload = { correcto: true, respuesta: [] };
+      return Promise.resolve({ data: Buffer.from(JSON.stringify(payload), 'utf8'), headers: { 'content-type': 'application/json' }, status: 200 } as any);
+    }
+    if (func === 'comunas') {
+      const payload = { correcto: true, respuesta: [] };
+      return Promise.resolve({ data: Buffer.from(JSON.stringify(payload), 'utf8'), headers: { 'content-type': 'application/json' }, status: 200 } as any);
+    }
+    if (func === 'iconos') {
+      const payload = { correcto: true, respuesta: { correct: true } };
+      return Promise.resolve({ data: Buffer.from(JSON.stringify(payload), 'utf8'), headers: { 'content-type': 'application/json' }, status: 200 } as any);
+    }
+    const payload = { correcto: false, error: 'Func no soportado' };
+    return Promise.resolve({ data: Buffer.from(JSON.stringify(payload), 'utf8'), headers: { 'content-type': 'application/json' }, status: 400 } as any);
+  });
+});
+
+afterEach(() => jest.clearAllMocks());
 
 describe('POST /mfarmacias/mapa.php', () => {
   it('should return fechas for func=fechas', async () => {
