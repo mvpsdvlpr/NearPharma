@@ -245,9 +245,26 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
         branch = process.env.GIT_BRANCH || process.env.VERCEL_GIT_COMMIT_REF || null;
       }
 
-      const buildTime = process.env.BUILD_TIME || new Date().toISOString();
+      const buildTimeIso = process.env.BUILD_TIME || new Date().toISOString();
+      // Format build time into DDMMYYYY.HHMM for label (example: 20102025.2214 -> 20-10-2025 22:14)
+      let buildLabel = null;
+      try {
+        const d = new Date(buildTimeIso);
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const dd = pad(d.getUTCDate());
+        const mm = pad(d.getUTCMonth() + 1);
+        const yyyy = d.getUTCFullYear();
+        const hh = pad(d.getUTCHours());
+        const min = pad(d.getUTCMinutes());
+        buildLabel = `${dd}${mm}${yyyy}.${hh}${min}`;
+      } catch (_) {
+        buildLabel = process.env.BUILD_TIME || null;
+      }
 
-      return res.json({ ok: true, version: pkgVersion, commit, branch, buildTime, env: process.env.NODE_ENV || 'development' });
+      const channel = (process.env.RELEASE_CHANNEL || 'beta');
+      const label = `${pkgVersion} - ${channel} - build ${buildLabel}`;
+
+      return res.json({ ok: true, version: pkgVersion, label, commit, branch, buildTime: buildTimeIso, env: process.env.NODE_ENV || 'development' });
     } catch (err) {
       return res.status(500).json({ ok: false, error: String(err) });
     }
