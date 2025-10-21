@@ -1,5 +1,16 @@
 import request from 'supertest';
 import app from '../src/app';
+import axios from 'axios';
+
+jest.mock('axios');
+const mockedAxios = axios as jest.Mocked<typeof axios>;
+
+beforeEach(() => {
+  // Return a non-empty regions array for tests
+  const regions = [{ region_id: 1, region_nombre: 'Reg1' }];
+  const buf = Buffer.from(JSON.stringify(regions));
+  mockedAxios.post?.mockResolvedValue({ data: buf, headers: { 'content-type': 'application/json' }, status: 200 } as any);
+});
 
 describe('GET /api/regions', () => {
   it('should return 200 and an array of regions', async () => {

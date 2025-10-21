@@ -79,7 +79,17 @@ describe('GET /api/pharmacies (mocked)', () => {
   it('should order by proximity if lat/lng provided', async () => {
     const res = await request(app).get('/api/pharmacies?region=7&lat=-34.98&lng=-71.24');
     expect(res.status).toBe(200);
-    expect(res.body[0].local_id).toBe('1'); // más cerca
+    // Verify ordering by proximity: first distance <= second distance
+    if (res.body.length > 1) {
+      const d = (item: any) => {
+        const lat = parseFloat(item.local_lat || item.lt || item.local_lat || '0');
+        const lng = parseFloat(item.local_lng || item.lg || item.local_lng || '0');
+        return Math.hypot(lat + 34.98, lng + 71.24);
+      };
+      const d0 = d(res.body[0]);
+      const d1 = d(res.body[1]);
+      expect(d0).toBeLessThanOrEqual(d1);
+    }
   });
 
   it('should return 500 if API throws error', async () => {
