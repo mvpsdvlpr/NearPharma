@@ -261,9 +261,15 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
         buildLabel = process.env.BUILD_TIME || null;
       }
 
-      const channel = (process.env.RELEASE_CHANNEL || 'beta');
+  const channel = (process.env.RELEASE_CHANNEL || 'stable');
       const label = `${pkgVersion} - ${channel} - build ${buildLabel}`;
 
+      const allow = (String(process.env.ALLOW_VERSION || '').toLowerCase() === 'true');
+      const isProd = (String(process.env.NODE_ENV || '').toLowerCase() === 'production');
+      if (isProd && !allow) {
+        // In production, expose minimal info unless explicitly allowed
+        return res.json({ ok: true, label, env: process.env.NODE_ENV || 'production' });
+      }
       return res.json({ ok: true, version: pkgVersion, label, commit, branch, buildTime: buildTimeIso, env: process.env.NODE_ENV || 'development' });
     } catch (err) {
       return res.status(500).json({ ok: false, error: String(err) });
@@ -412,7 +418,15 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
           const userLat = Number(lat);
           const userLng = Number(lng);
           // Helper to parse coordinates robustly: accepts strings with comma decimals, extra chars, etc.
-          const parseCoord = (v: any): number => {
+          const parseCoord = (itemOrVal: any, fallbackKey?: string): number => {
+            let v = itemOrVal;
+            // If passed an object, attempt to extract numeric field from known keys
+            if (typeof itemOrVal === 'object') {
+              const item = itemOrVal as any;
+              v = item.lt ?? item.local_lat ?? item.local_lat ?? item.local_lat ?? item.local_lng ?? item.lg ?? item.local_lat ?? item.local_lng ?? undefined;
+              // If fallbackKey provided, use it
+              if ((v === undefined || v === null) && fallbackKey) v = item[fallbackKey];
+            }
             if (v === null || v === undefined) return NaN;
             // keep sign, digits, dot/comma; change comma to dot
             const s = String(v).trim().replace(',', '.').match(/-?[0-9]+(?:\.[0-9]+)?/);
@@ -429,9 +443,9 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
             lngMax: userLng + 0.1,
           };
 
-          result = result.filter((item: any) => {
-            const lat = parseCoord(item.lt);
-            const lng = parseCoord(item.lg);
+            result = result.filter((item: any) => {
+            const lat = parseCoord(item);
+            const lng = parseCoord(item, 'local_lng') || parseCoord(item, 'lg');
             return !isNaN(lat) && !isNaN(lng);
           });
 
@@ -445,11 +459,11 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
           });
 
           // Sort pharmacies by distance
-          result = result.slice().sort((a: any, b: any) => {
-            const aLat = parseCoord(a.lt);
-            const aLng = parseCoord(a.lg);
-            const bLat = parseCoord(b.lt);
-            const bLng = parseCoord(b.lg);
+            result = result.slice().sort((a: any, b: any) => {
+            const aLat = parseCoord(a);
+            const aLng = parseCoord(a, 'local_lng') || parseCoord(a, 'lg');
+            const bLat = parseCoord(b);
+            const bLng = parseCoord(b, 'local_lng') || parseCoord(b, 'lg');
             const dA = distance(userLat, userLng, aLat, aLng);
             const dB = distance(userLat, userLng, bLat, bLng);
             return dA - dB;
@@ -486,6 +500,15 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
       res.json({ ok: true, now: new Date().toISOString(), env: process.env.NODE_ENV || 'dev' });
     });
   } // end _allowDebug
+  // Health endpoint (lightweight)
+  router.get('/health', async (req: Request, res: Response) => {
+    try {
+      const stats = cache.getMetrics ? cache.getMetrics() : { hits: 0, misses: 0 };
+      return res.json({ ok: true, uptime: process.uptime(), cache: stats });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
   // Exponer el cache para testing
   (router as any)._cache = cache;
   return router;

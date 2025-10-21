@@ -1,3 +1,40 @@
+# Backend - Versioning & Deployment notes
+
+This document explains the `/api/version` endpoint and how to provide accurate build metadata during CI/Vercel builds.
+
+## /api/version
+
+- Returns JSON with the following fields (in non-production):
+  - `version` (from `package.json`)
+  - `label` formatted as `<version> - <channel> - build DDMMYYYY.HHMM` (example: `1.0.0 - stable - build 20102025.2214`)
+  - `commit` (short SHA) and `branch` when available
+  - `buildTime` (ISO)
+  - `env` (NODE_ENV)
+
+- In production the endpoint returns only `{ ok: true, label, env }` unless `ALLOW_VERSION=true` is set.
+
+## Build-time environment variables
+
+During CI / Vercel build, run the provided script to generate `.env.build` before compilation:
+
+```
+node ./scripts/generate_build_env.js
+```
+
+The generator writes the following keys to `.env.build`:
+
+- `VERCEL_GIT_COMMIT_SHA` - commit SHA (or CI-provided equivalent)
+- `VERCEL_GIT_COMMIT_REF` - branch name
+- `BUILD_TIME` - ISO timestamp of build
+- `RELEASE_CHANNEL` - e.g. `stable` or `beta`
+
+The `vercel-build` script already runs the generator before `tsc`.
+
+## Security & Ops
+
+- `.env.build` is ignored by git and written with restrictive permissions (600). Do not commit it.
+- In production, prefer to keep `/api/version` minimal (only label) unless strictly necessary.
+- Route logs go to stdout as structured JSON; configure a secure log sink (with redaction and RBAC) in production.
 # NearPharma Backend
 
 This is a secure Node.js + TypeScript backend for the NearPharma app, designed for Vercel deployment and scalable cloud hosting.

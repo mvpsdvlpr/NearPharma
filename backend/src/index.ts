@@ -1,6 +1,14 @@
 
-// Load environment variables
-require('dotenv').config();
+// Load environment variables: prefer build-generated .env.build
+const fs = require('fs');
+const path = require('path');
+const dotenv = require('dotenv');
+const buildEnv = path.resolve(__dirname, '..', '.env.build');
+if (fs.existsSync(buildEnv)) {
+  dotenv.config({ path: buildEnv });
+} else {
+  dotenv.config();
+}
 import app from './app';
 
 const PORT = process.env.PORT || 3001;
