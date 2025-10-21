@@ -261,7 +261,7 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
         buildLabel = process.env.BUILD_TIME || null;
       }
 
-      const channel = (process.env.RELEASE_CHANNEL || 'beta');
+  const channel = (process.env.RELEASE_CHANNEL || 'stable');
       const label = `${pkgVersion} - ${channel} - build ${buildLabel}`;
 
       return res.json({ ok: true, version: pkgVersion, label, commit, branch, buildTime: buildTimeIso, env: process.env.NODE_ENV || 'development' });
