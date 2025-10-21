@@ -22,17 +22,18 @@ class AppLogger {
   }
 
   static void d(String message, [dynamic error, StackTrace? st]) {
-    _logger.d(message, error, st);
-    if (kDebugMode) print('[DEBUG] $message');
+    if (!kReleaseMode) {
+      _logger.d(message, error, st);
+    }
   }
 
   static void i(String message, [dynamic error, StackTrace? st]) {
-    _logger.i(message, error, st);
-    if (kDebugMode) print('[INFO] $message');
+    if (!kReleaseMode) {
+      _logger.i(message, error, st);
+    }
   }
 
   static void e(String message, [dynamic error, StackTrace? st]) {
     _logger.e(message, error, st);
-    if (kDebugMode) print('[ERROR] $message');
   }
 }

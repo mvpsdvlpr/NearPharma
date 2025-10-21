@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'api_client.dart';
+import 'src/logger.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:math';
 import 'dart:async';
@@ -22,8 +23,8 @@ void main() async {
       MyApp.packageBuild = info.buildNumber;
       MyApp.appVersion = '${info.version}+${info.buildNumber}';
     }
-  } catch (_) {
-    // ignore and use compile-time fallback
+  } catch (e, st) {
+    AppLogger.d('PackageInfo.fromPlatform failed, using compile-time fallback', e, st);
   }
   runApp(const MyApp());
 }
@@ -172,14 +173,18 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
           for (final c in list) {
             try {
               map[c['id'].toString()] = c['nombre'].toString();
-            } catch (_) {}
+            } catch (e, st) {
+              AppLogger.d('parse comuna entry failed in _loadAllComunas', e, st);
+            }
           }
           setState(() {
             comunasMap = map;
           });
         }
       }
-    } catch (_) {}
+    } catch (e, st) {
+      AppLogger.d('_loadTipos error', e, st);
+    }
   }
 
   Future<String> _apiBase() async {
@@ -270,30 +275,68 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
 
   Future<void> _loadComunas(String regionId) async {
     try {
-    final resp = await _postForm({'func': 'comunas', 'region': regionId});
+      // Try requesting comunas filtered by region first (more efficient)
+      final resp = await _postForm({'func': 'comunas', 'region': regionId});
+      List<dynamic> comunasList = [];
+      bool ok = false;
       if (resp.statusCode == 200) {
-        final data = json.decode(resp.body);
-        List<dynamic> comunasList = [];
-        if (data is Map && data['respuesta'] != null && data['respuesta'] is List) {
-          comunasList = data['respuesta'];
-        } else if (data is List) {
-          comunasList = data;
-        }
-        setState(() {
-          comunas = comunasList;
-          // build/update comunasMap for quick lookup
-          comunasMap = {};
-          for (final c in comunasList) {
-            try {
-              comunasMap[c['id'].toString()] = c['nombre'].toString();
-            } catch (_) {}
+        try {
+          final data = json.decode(resp.body);
+          if (data is Map && data['respuesta'] != null && data['respuesta'] is List) {
+            comunasList = data['respuesta'];
+            ok = true;
+          } else if (data is List) {
+            comunasList = data;
+            ok = true;
           }
-          // Do not preselect a comuna; user must choose
-          comunaSeleccionada = null;
-        });
-      } else {
-        throw Exception('Error comunas: ${resp.statusCode}');
+        } catch (_) {
+          // parsing failed, fall through to fallback
+          ok = false;
+        }
       }
+
+      if (!ok) {
+        // Fallback: request global comunas and then filter by regionId if possible
+        try {
+          final allResp = await _postForm({'func': 'comunas'});
+          if (allResp.statusCode == 200) {
+            final raw = json.decode(allResp.body);
+            List<dynamic> allList = [];
+            if (raw is Map && raw['respuesta'] != null && raw['respuesta'] is List) {
+              allList = raw['respuesta'];
+            } else if (raw is List) {
+              allList = raw;
+            }
+            // If items contain a region id field, try to filter; otherwise keep all
+            try {
+              comunasList = allList.where((c) {
+                try {
+                  final r = c['region'] ?? c['region_id'] ?? c['regionId'];
+                  if (r == null) return true; // no region info -> keep
+                  return r.toString() == regionId.toString();
+                } catch (_) {
+                  return true;
+                }
+              }).toList();
+            } catch (_) {
+              comunasList = allList;
+            }
+          }
+        } catch (_) {}
+      }
+
+      setState(() {
+        comunas = comunasList;
+        // build/update comunasMap for quick lookup
+        comunasMap = {};
+        for (final c in comunasList) {
+          try {
+            comunasMap[c['id'].toString()] = c['nombre'].toString();
+          } catch (_) {}
+        }
+        // Do not preselect a comuna; user must choose
+        comunaSeleccionada = null;
+      });
     } catch (e) {
       setState(() {
         error = e.toString();
@@ -351,10 +394,14 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
                   seen.add(id);
                   farmaciasList.add(l);
                 }
-              } catch (_) {}
+              } catch (e, st) {
+                AppLogger.d('failed to extract id for local entry', e, st);
+              }
             }
           }
-        } catch (_) {}
+        } catch (e, st) {
+          AppLogger.d('failed to parse region response for locales', e, st);
+        }
       }
     } else {
       final bodyMap = <String, String>{'func': 'region', 'filtro': tipo, 'region': regionSeleccionada ?? '', 'hora': hora};
@@ -369,7 +416,13 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
   // Debug: print raw region response
-  debugPrint('DEBUG region response: ${resp.body}');
+  // Log region response preview via AppLogger
+  try {
+    final preview = resp.body.length > 1000 ? resp.body.substring(0, 1000) + '...[truncated]' : resp.body;
+    AppLogger.d('region response preview: $preview');
+  } catch (e, st) {
+    AppLogger.d('region response preview failed to build', e, st);
+  }
         if (data is Map && data['respuesta'] != null && data['respuesta']['locales'] != null) {
           farmaciasList = List<dynamic>.from(data['respuesta']['locales']);
         }
@@ -403,7 +456,9 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
             farmaciasList = List<dynamic>.from(data);
             if (farmaciasList.isNotEmpty) break;
           }
-        } catch (_) {}
+        } catch (e, st) {
+          AppLogger.d('fallback region request failed for filter $alt', e, st);
+        }
       }
 
       if (farmaciasList.isEmpty) {
@@ -434,15 +489,21 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
 
           // Check comuna id
           final cm = (f['cm'] ?? f['comuna'] ?? f['comuna_id'] ?? f['comunaId'])?.toString();
-          if (cm != null && cm == targetComunaId) return true;
+          if (cm != null && cm == targetComunaId) {
+            return true;
+          }
 
           // Check comuna name
           final cname = (f['comuna_nombre'] ?? f['comunaNombre'] ?? f['comuna_nombre_local'] ?? f['comuna'])?.toString() ?? '';
-          if (cname.toLowerCase().contains(targetComunaName.toLowerCase())) return true;
+          if (cname.toLowerCase().contains(targetComunaName.toLowerCase())) {
+            return true;
+          }
 
           // Check address
           final dr = (f['dr'] ?? f['direccion'] ?? f['local_dr'] ?? f['local_direccion'])?.toString() ?? '';
-          if (dr.toLowerCase().contains(targetComunaName.toLowerCase())) return true;
+          if (dr.toLowerCase().contains(targetComunaName.toLowerCase())) {
+            return true;
+          }
         } catch (_) {}
         return false;
       }).toList();
@@ -480,6 +541,20 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
     return '${two(now.hour)}:${two(now.minute)}:${two(now.second)}';
   }
 
+  // Safe parse helper: returns null when parse fails
+  double? _safeParseDouble(String? s) {
+    if (s == null) return null;
+    try {
+      final cleaned = s.trim().replaceAll(',', '.');
+      final m = RegExp(r'-?\d+(?:\.\d+)?').firstMatch(cleaned);
+      if (m == null) return null;
+      return double.tryParse(m.group(0) ?? '');
+    } catch (e, st) {
+      AppLogger.d('safeParseDouble failed for input: $s', e, st);
+      return null;
+    }
+  }
+
   // Load regiones (similar to web func=regiones)
   Future<void> _loadRegiones() async {
     try {
@@ -496,14 +571,18 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
         for (final r in regionesList) {
           try {
             map[r['id'].toString()] = r['nombre'].toString();
-          } catch (_) {}
+          } catch (e, st) {
+            AppLogger.d('failed to compute id in sorted mapping', e, st);
+          }
         }
         setState(() {
           regiones = regionesList;
           regionesMap = map;
         });
       }
-    } catch (_) {}
+    } catch (e, st) {
+      AppLogger.d('_loadRegiones top-level catch', e, st);
+    }
   }
 
   // Load fechas (func=fechas) and convert map to list of {id,label}
@@ -529,7 +608,9 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
           fechas = out;
         });
       }
-    } catch (_) {}
+    } catch (e, st) {
+      AppLogger.d('_loadFechas top-level catch', e, st);
+    }
   }
 
   String _stripHtml(String? s) {
@@ -550,6 +631,21 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
     return R * c;
   }
 
+  // Parse several coordinate formats into a double.
+  // Accepts numeric types or strings with commas, degree symbols or extra characters.
+  // Returns `null` when parsing fails.
+  double? _toDoubleCoord(dynamic v) {
+    if (v == null) return null;
+    try {
+      final s = v.toString().trim().replaceAll(',', '.');
+      // Match an optional sign, digits, optional decimal part.
+      final m = RegExp(r'-?\d+(?:\.\d+)?').firstMatch(s);
+      if (m == null) return null;
+      return double.tryParse(m.group(0) ?? '');
+    } catch (_) {
+      return null;
+    }
+  }
   /// Sort a list of farmacia-like maps by proximity to (lat,lng).
   /// Each item can have keys 'lt'/'lat' and 'lg'/'lng'. Returns a new list sorted nearest->farthest.
   List<dynamic> sortByProximity(List<dynamic> items, double lat, double lng) {
@@ -558,35 +654,17 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       double aDist = double.infinity;
       double bDist = double.infinity;
       try {
-        final aLatRaw = (a['lt'] ?? a['lat'] ?? a['local_lat'])?.toString();
-        final aLngRaw = (a['lg'] ?? a['lng'] ?? a['local_lng'])?.toString();
-        final parseCoord = (String? s) {
-          if (s == null) return double.nan;
-          final cleaned = s.trim().replaceAll(',', '.');
-          final m = RegExp(r'-?\d+(?:\.\d+)?').firstMatch(cleaned);
-          if (m == null) return double.nan;
-          return double.tryParse(m.group(0) ?? '') ?? double.nan;
-        };
-        final alat = parseCoord(aLatRaw);
-        final alng = parseCoord(aLngRaw);
-        if (!alat.isNaN && !alng.isNaN) {
-          aDist = _distanceKm(lat, lng, alat, alng);
+        final aLat = _toDoubleCoord(a['lt'] ?? a['lat'] ?? a['local_lat']);
+        final aLng = _toDoubleCoord(a['lg'] ?? a['lng'] ?? a['local_lng']);
+        if (aLat != null && aLng != null) {
+          aDist = _distanceKm(lat, lng, aLat, aLng);
         }
       } catch (_) {}
       try {
-        final bLatRaw = (b['lt'] ?? b['lat'] ?? b['local_lat'])?.toString();
-        final bLngRaw = (b['lg'] ?? b['lng'] ?? b['local_lng'])?.toString();
-        final parseCoord = (String? s) {
-          if (s == null) return double.nan;
-          final cleaned = s.trim().replaceAll(',', '.');
-          final m = RegExp(r'-?\d+(?:\.\d+)?').firstMatch(cleaned);
-          if (m == null) return double.nan;
-          return double.tryParse(m.group(0) ?? '') ?? double.nan;
-        };
-        final blat = parseCoord(bLatRaw);
-        final blng = parseCoord(bLngRaw);
-        if (!blat.isNaN && !blng.isNaN) {
-          bDist = _distanceKm(lat, lng, blat, blng);
+        final bLat = _toDoubleCoord(b['lt'] ?? b['lat'] ?? b['local_lat']);
+        final bLng = _toDoubleCoord(b['lg'] ?? b['lng'] ?? b['local_lng']);
+        if (bLat != null && bLng != null) {
+          bDist = _distanceKm(lat, lng, bLat, bLng);
         }
       } catch (_) {}
       return aDist.compareTo(bDist);
@@ -615,10 +693,10 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
         body['fecha'] = fechaSeleccionada!;
       }
       // include lat/lng if present (map.js sends the whole lc object but im is enough for server)
-  final resp = await _postForm(body);
+      final resp = await _postForm(body);
       if (resp.statusCode == 200) {
-  // Debug: print raw local response
-  debugPrint('DEBUG local(${body['im'] ?? 'no-im'}) response: ${resp.body}');
+        // Debug: print raw local response
+        debugPrint('DEBUG local(${body['im'] ?? 'no-im'}) response: ${resp.body}');
         final data = json.decode(resp.body);
         if (data is Map && data['respuesta'] != null) {
           final localResp = data['respuesta']['local'];
@@ -650,6 +728,12 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
   // Public wrapper for tests to trigger filter loading when autoInit is false
   Future<void> loadFiltros() async {
     await _loadFiltros();
+  }
+
+  // Public test helper to load comunas for a given region. Keeps _loadComunas private but
+  // exposes a safe wrapper for tests and external callers that need to trigger it.
+  Future<void> loadComunasForTest(String regionId) async {
+    await _loadComunas(regionId);
   }
 
   /// Busca por tipo usando la misma semántica que la función `buscar(tipo)` en mapa.php.
@@ -788,9 +872,12 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
               return ai.compareTo(bi);
             });
           });
-        } catch (_) {}
+        } catch (e, st) {
+          AppLogger.d('_ensureLocation: reordering mapping failed', e, st);
+        }
       }
-    } catch (_) {
+    } catch (e, st) {
+      AppLogger.d('_ensureLocation top-level failed', e, st);
       currentPosition = null;
     }
   }
@@ -1047,9 +1134,10 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
                                     double? lat;
                                     double? lng;
                                     try {
-                                      lat = double.parse((f['lt'] ?? f['lat'] ?? '').toString());
-                                      lng = double.parse((f['lg'] ?? f['lng'] ?? '').toString());
-                                    } catch (_) {
+                                      lat = _safeParseDouble((f['lt'] ?? f['lat'] ?? '').toString());
+                                      lng = _safeParseDouble((f['lg'] ?? f['lng'] ?? '').toString());
+                                    } catch (e, st) {
+                                      AppLogger.d('safe parse lat/lng failed', e, st);
                                       lat = null; lng = null;
                                     }
                                     await _openMaps(direccion, comunaNombre, regionNombre, lat: lat, lng: lng);
