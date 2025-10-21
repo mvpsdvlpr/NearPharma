@@ -49,6 +49,8 @@ class ApiClient {
   void close() {
     try {
       client.close();
-    } catch (_) {}
+    } catch (e, st) {
+      AppLogger.d('ApiClient.close failed', e, st);
+    }
   }
 }
