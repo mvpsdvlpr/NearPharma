@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 // 'dart:typed_data' not needed explicitly; ByteData/Uint8List available via services import
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import '../src/logger.dart';
 
 // Use bundled images during tests/development to avoid remote downloads.
 const bool kUseBundledImages = true;
@@ -36,11 +37,14 @@ class _AdaptiveNetworkImageState extends State<AdaptiveNetworkImage> {
       if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
         try {
           return SvgPicture.memory(resp.bodyBytes, width: widget.width, height: widget.height, fit: widget.fit);
-        } catch (_) {
+        } catch (e, st) {
+          AppLogger.d('AdaptiveNetworkImage._fetchAndRenderSvg failed', e, st);
           return Image.memory(resp.bodyBytes, width: widget.width, height: widget.height, fit: widget.fit, errorBuilder: (_, __, ___) => const Icon(Icons.local_pharmacy, color: Colors.grey));
         }
       }
-    } catch (_) {}
+    } catch (e, st) {
+      AppLogger.d('AdaptiveNetworkImage._fetchAndRenderSvg failed', e, st);
+    }
     finally {
       if (local != null) local.close();
     }
@@ -86,7 +90,9 @@ class _AdaptiveNetworkImageState extends State<AdaptiveNetworkImage> {
             setState(() => _type = 'svg');
             return;
           }
-        } catch (_) {}
+        } catch (e, st) {
+            AppLogger.d('AdaptiveNetworkImage._detect: head/get failed', e, st);
+        }
       }
       setState(() => _type = 'raster');
     } catch (_) {
@@ -105,8 +111,8 @@ class _AdaptiveNetworkImageState extends State<AdaptiveNetworkImage> {
       if (_bytes != null) {
         try {
           return SvgPicture.memory(_bytes!, width: widget.width, height: widget.height, fit: widget.fit);
-        } catch (_) {
-          // fallthrough to a safe placeholder below
+        } catch (e, st) {
+          AppLogger.d('AdaptiveNetworkImage build svg bytes failed', e, st);
         }
       }
       // Avoid using SvgPicture.network which performs its own HttpClient fetch and can throw in test environments.
@@ -147,9 +153,10 @@ class AssetAdaptiveImage extends StatelessWidget {
       try {
         final b = await rootBundle.load(p);
         return b.buffer.asUint8List();
-      } catch (_) {
-        return null;
-      }
+          } catch (e, st) {
+          AppLogger.d('AssetAdaptiveImage._resolveBytes: tryLoad alternative failed', e, st);
+          return null;
+          }
     }
 
     final orig = assetPath;
@@ -330,7 +337,9 @@ class PharmacyCard extends StatelessWidget {
                 : AdaptiveNetworkImage(url: iconUrl, width: 15, height: 15, fit: BoxFit.contain, disableNetworkImages: disableNetworkImages));
         if (tipoIcon == 'turnos') pillText = 'Turno';
       }
-    } catch (_) {}
+    } catch (e, st) {
+      AppLogger.d('Failed to compute pill/icon for local entry', e, st);
+    }
 
     return Card(
       elevation: 1,

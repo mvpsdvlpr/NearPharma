@@ -3,8 +3,14 @@ name: Flutter tests
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'mobile/**'
+      - 'pubspec.yaml'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'mobile/**'
+      - 'pubspec.yaml'
 
 jobs:
   test:
@@ -14,7 +20,9 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.10.6'
+          # Pin to a concrete Flutter version that includes Dart >= 3.1 so
+          # dependency resolution is reproducible across CI runs.
+          flutter-version: '3.13.0'
       - name: Cache pub
         uses: actions/cache@v4
         with:

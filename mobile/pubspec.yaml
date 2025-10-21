@@ -42,6 +42,7 @@ dependencies:
   url_launcher: ^6.2.5
   flutter_svg: ^2.1.6
   package_info_plus: ^8.3.1
+  logger: ^1.2.0
 
 dev_dependencies:
   flutter_test:
@@ -53,6 +54,8 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.10.0
+  # logger moved to dependencies for runtime usage
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -70,6 +73,15 @@ flutter:
     - .env
     # Optional: copy the site's `img/` folder into `mobile/assets/img/` and enable kUseBundledImages in the widget
     - assets/img/
+
+# Launcher icons configuration (flutter_launcher_icons)
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/icons/icon_master.png"
+  adaptive_icon_background: "assets/icons/adaptive_background.png"
+  adaptive_icon_foreground: "assets/icons/adaptive_foreground.png"
+  remove_alpha: false
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

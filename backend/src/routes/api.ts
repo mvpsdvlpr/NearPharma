@@ -27,7 +27,7 @@ async function preflightGetCookies(apiBase: string, timeout = FARMANET_TIMEOUT):
     }
   } catch (e) {
     // Not fatal; caller can try POST without cookies
-    console.log('[API][preflight] GET failed:', String(e).slice(0, 200));
+    try { console.info(JSON.stringify({ ts: new Date().toISOString(), route: '/preflight', msg: 'GET preflight failed', error: String(e).slice(0, 200) })); } catch (_) { console.log('[API][preflight] GET failed'); }
   }
   return '';
 }
@@ -41,15 +41,123 @@ async function postToFarmanet(params: URLSearchParams, apiBase = FARMANET_API_BA
   if (cookieHeader) headers.Cookie = cookieHeader;
   const response = await axios.post(apiBase, params, { headers, timeout, responseType: 'arraybuffer' });
   const buf = Buffer.from(response.data || '');
-  const preview = buf.toString('utf8', 0, Math.min(buf.length, FARMANET_PREVIEW_LENGTH));
-  // Try parse JSON safely
-  try {
-    const parsed = JSON.parse(preview);
-    return { status: response.status, headers: response.headers, data: parsed, preview, isJson: true };
-  } catch (_) {
-    // If it's not JSON, return raw preview and full buffer as fallback
-    return { status: response.status, headers: response.headers, data: preview, preview, isJson: false };
+  const max = Math.min(buf.length, FARMANET_PREVIEW_LENGTH);
+  // First try utf8
+  let preview = buf.toString('utf8', 0, max);
+
+  // Helper to attempt JSON parsing with some normalization strategies
+  const tryParse = (s: string): any | null => {
+    try {
+      const p = JSON.parse(s);
+      // If parsed value is a string that itself contains JSON, try parse inner JSON
+      if (typeof p === 'string') {
+        try {
+          return JSON.parse(p);
+        } catch (_) {
+          return p;
+        }
+      }
+      return p;
+    } catch (e) {
+      // try remove BOM and control chars
+      try {
+        const cleaned = s.replace(/^[\uFEFF\u200B]+/, '').replace(/[\x00-\x1F]+/g, '');
+        const p2 = JSON.parse(cleaned);
+        if (typeof p2 === 'string') {
+          try { return JSON.parse(p2); } catch (_) { return p2; }
+        }
+        return p2;
+      } catch (e2) {
+        // attempt to extract a JSON substring (first {...} block)
+        const m = s.match(/\{[\s\S]*\}/);
+        if (m) {
+          try {
+            return JSON.parse(m[0]);
+          } catch (e3) {
+            // attempt to parse nested JSON (string containing JSON)
+            const innerMatch = m[0].match(/"(\{[\s\S]*\})"/);
+            if (innerMatch) {
+              try {
+                const inner = innerMatch[1].replace(/\\"/g, '"');
+                const innerParsed = JSON.parse(inner);
+                if (typeof innerParsed === 'string') {
+                  try { return JSON.parse(innerParsed); } catch (_) { return innerParsed; }
+                }
+                return innerParsed;
+              } catch (_) {
+                return null;
+              }
+            }
+            return null;
+          }
+        }
+        return null;
+      }
+    }
+  };
+
+  // Try parsing utf8 preview
+  // Normalize decimal commas used as decimal separators in some upstream responses
+  const normalizeDecimalCommas = (s: string) =>
+    s.replace(/"((?:lat|lng|local_lat|local_lng|lt|lg))"\s*:\s*"(-?\d+),(\d+)"/gi, (_m, key, a, b) => `"${key}":"${a}.${b}"`);
+
+  // Also get full body as UTF8 string for broader parsing attempts
+  const fullStr = buf.toString('utf8', 0, buf.length);
+
+  // Try a set of parsing attempts in order to maximize chances of extracting JSON
+  const attempts = [preview, fullStr, normalizeDecimalCommas(preview), normalizeDecimalCommas(fullStr)];
+  let parsed: any | null = null;
+  for (const attempt of attempts) {
+    try {
+      parsed = tryParse(attempt);
+      if (parsed != null) {
+        preview = attempt.slice(0, max);
+        break;
+      }
+    } catch (_) {
+      // ignore and continue
+    }
   }
+  // If not parsed, try latin1 decoding (some upstream responses may use legacy encodings)
+  if (parsed == null) {
+    try {
+      const previewLatin1 = buf.toString('latin1', 0, max);
+      parsed = tryParse(previewLatin1);
+      if (parsed != null) preview = previewLatin1;
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  if (parsed != null) {
+    return { status: response.status, headers: response.headers, data: parsed, preview, isJson: true };
+  }
+
+  // If we reach here parsing failed — add debug logs to help diagnose upstream content
+  try {
+    const logObj = { ts: new Date().toISOString(), route: '/postToFarmanet', msg: 'failed to parse upstream response as JSON', status: response.status, content_type: (response.headers && (response.headers as any)['content-type']) };
+    console.error(JSON.stringify(logObj));
+    // print a longer preview (first 4000 chars) to help debugging
+    const longPreview = fullStr.slice(0, Math.min(fullStr.length, 4000));
+    try { console.error(JSON.stringify({ ...logObj, preview: longPreview.slice(0, 2000) })); } catch (_) { console.error('[API][postToFarmanet] preview could not be stringified'); }
+  } catch (_) {}
+
+  // As a last attempt, if the response body is itself a JSON string containing JSON
+  // (e.g. "{\"correcto\":true,...}"), try to extract that.
+  try {
+    const asString = buf.toString('utf8', 0, buf.length);
+    const unquoted = asString.match(/"\{[\s\S]*\}"/);
+    if (unquoted) {
+      const inner = unquoted[0].slice(1, -1).replace(/\\"/g, '"');
+      const maybe = JSON.parse(inner);
+      return { status: response.status, headers: response.headers, data: maybe, preview: inner.slice(0, FARMANET_PREVIEW_LENGTH), isJson: true };
+    }
+  } catch (_) {
+    // ignore
+  }
+
+  // If it's not JSON, return raw preview and full buffer as fallback
+  return { status: response.status, headers: response.headers, data: preview, preview, isJson: false };
 }
 
 // Handler para compatibilidad POST /mfarmacias/mapa.php
@@ -116,20 +224,20 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
 
   // GET /api/regions
   router.get('/regions', async (req: Request, res: Response) => {
-    console.log('[API] GET /api/regions');
+    try { console.info(JSON.stringify({ ts: new Date().toISOString(), route: '/api/regions', msg: 'incoming' })); } catch (_) {}
     try {
       const apiBase = FARMANET_API_BASE;
       const cookieHeader = await preflightGetCookies(apiBase);
-      const params = new URLSearchParams({ func: 'locales_regiones' });
+  const params = new URLSearchParams({ func: 'regiones' });
       const response = await postToFarmanet(params, apiBase, cookieHeader);
-      console.log(`[API][regions] farmanet status=${response.status}`);
+  try { console.info(JSON.stringify({ ts: new Date().toISOString(), route: '/api/regions', farmanet_status: response.status })); } catch (_) {}
       const data = response.data;
       const regiones = Array.isArray(data)
         ? data.map((item: any) => ({ id: item.region_id, nombre: item.region_nombre }))
         : [];
       res.json(regiones);
     } catch (err) {
-      console.error('[API][regions] Error general:', err);
+      try { console.error(JSON.stringify({ ts: new Date().toISOString(), route: '/api/regions', error: String(err).slice(0, 500) })); } catch (_) {}
       res.status(500).json({ error: 'Error al obtener regiones', details: String(err) });
     }
   });
@@ -143,20 +251,20 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
       return res.status(400).json({ errors: errors.array() });
     }
     const regionId = req.query.region;
-    console.log(`[API] GET /api/communes?region=${regionId}`);
+  try { console.info(JSON.stringify({ ts: new Date().toISOString(), route: '/api/communes', region: regionId, msg: 'incoming' })); } catch (_) {}
     try {
       const apiBase = FARMANET_API_BASE;
-      const params = new URLSearchParams({ func: 'locales_comunas', region: String(regionId) });
+  const params = new URLSearchParams({ func: 'comunas', region: String(regionId) });
       const cookieHeader = await preflightGetCookies(apiBase);
       const response = await postToFarmanet(params, apiBase, cookieHeader);
-      console.log(`[API][communes] farmanet status=${response.status} region=${regionId}`);
+  try { console.info(JSON.stringify({ ts: new Date().toISOString(), route: '/api/communes', region: regionId, farmanet_status: response.status })); } catch (_) {}
       const data = response.data;
       const comunas = Array.isArray(data)
         ? data.map((item: any) => ({ id: String(item.comuna_nombre).toLowerCase().replace(/ /g, '-'), nombre: item.comuna_nombre }))
         : [];
       res.json(comunas);
     } catch (err) {
-      console.error(`[API][communes] Error para region ${regionId}:`, err);
+      try { console.error(JSON.stringify({ ts: new Date().toISOString(), route: '/api/communes', region: regionId, error: String(err).slice(0, 500) })); } catch (_) {}
       res.status(500).json({ error: 'Error al obtener comunas', details: String(err) });
     }
   });
@@ -193,7 +301,7 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
         const { region, comuna, tipo, lat, lng } = req.query as any;
         const cacheKey = `pharmacies:${region}:${comuna || ''}:${tipo || ''}`;
         let result;
-        const cached = cache.get(cacheKey);
+        const cached = await cache.get(cacheKey);
         if (cached) {
           result = cached;
         } else {
@@ -208,16 +316,30 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
             // Log a short preview for debugging
             try {
               const preview = typeof data === 'string' ? data.slice(0, 1000) : JSON.stringify(Array.isArray(data) ? data.slice(0, 10) : data).slice(0, 1000);
-              console.log('[API][pharmacies] farmanet status=' + response.status + ' preview=' + preview);
+              try { console.info(JSON.stringify({ ts: new Date().toISOString(), route: '/api/pharmacies', farmanet_status: response.status, preview: preview.slice(0, 500) })); } catch (_) {}
             } catch (e) {
-              console.log('[API][pharmacies] farmanet status=' + response.status + ' (could not stringify preview)');
+              try { console.info(JSON.stringify({ ts: new Date().toISOString(), route: '/api/pharmacies', farmanet_status: response.status, msg: 'could not stringify preview' })); } catch (_) {}
             }
-            // Farmanet may return an envelope like { correcto: true, respuesta: { locales: [...] } }
-            if (data && typeof data === 'object' && (data as any).respuesta && Array.isArray((data as any).respuesta.locales)) {
-              data = (data as any).respuesta.locales;
+            // Farmanet responses vary. Prefer data.respuesta.locales, then data.respuesta if it's an array, then data itself if it's an array.
+            try {
+              if (data && typeof data === 'object') {
+                if ((data as any).respuesta && Array.isArray((data as any).respuesta.locales)) {
+                  data = (data as any).respuesta.locales;
+                } else if ((data as any).respuesta && Array.isArray((data as any).respuesta)) {
+                  try { console.info(JSON.stringify({ ts: new Date().toISOString(), route: '/api/pharmacies', msg: 'Using data.respuesta as fallback (array)' })); } catch (_) {}
+                  data = (data as any).respuesta;
+                } else if (Array.isArray(data)) {
+                  try { console.info(JSON.stringify({ ts: new Date().toISOString(), route: '/api/pharmacies', msg: 'Using top-level data array' })); } catch (_) {}
+                  // keep data as-is
+                } else if ((data as any).respuesta && (data as any).respuesta.locales && Array.isArray((data as any).respuesta.locales) === false) {
+                  // respuesta exists but not locales array — leave data as-is and let downstream handle emptiness
+                }
+              }
+            } catch (e) {
+              try { console.error(JSON.stringify({ ts: new Date().toISOString(), route: '/api/pharmacies', msg: 'error normalizing farmanet response', error: String(e).slice(0, 500) })); } catch (_) {}
             }
             if (!Array.isArray(data)) {
-              console.error('[API][pharmacies] La respuesta NO es un array:', data);
+              try { console.error(JSON.stringify({ ts: new Date().toISOString(), route: '/api/pharmacies', msg: 'response_not_array', data_preview: String(response.preview).slice(0, 1000) })); } catch (_) {}
               return res.status(502).json({ error: 'Invalid data from API', preview: String(response.preview).slice(0, 1000) });
             }
             result = data;
@@ -228,19 +350,57 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
               result = result.filter((item: any) => item.local_tipo?.toLowerCase() === String(tipo).toLowerCase());
             }
             if (Array.isArray(result) && result.length > 0) {
-              cache.set(cacheKey, result, CACHE_TTL);
+              await cache.set(cacheKey, result, CACHE_TTL);
             }
           } catch (err) {
-            console.error('[API][pharmacies] Error al consultar Farmanet:', err);
+            try { console.error(JSON.stringify({ ts: new Date().toISOString(), route: '/api/pharmacies', msg: 'Error querying Farmanet', error: String(err).slice(0, 500) })); } catch (_) {}
             return res.status(500).json({ error: 'External API error' });
           }
         }
         if (lat !== undefined && lng !== undefined && !isNaN(Number(lat)) && !isNaN(Number(lng))) {
           const userLat = Number(lat);
           const userLng = Number(lng);
+          // Helper to parse coordinates robustly: accepts strings with comma decimals, extra chars, etc.
+          const parseCoord = (v: any): number => {
+            if (v === null || v === undefined) return NaN;
+            // keep sign, digits, dot/comma; change comma to dot
+            const s = String(v).trim().replace(',', '.').match(/-?[0-9]+(?:\.[0-9]+)?/);
+            if (!s) return NaN;
+            const n = parseFloat(s[0]);
+            return isNaN(n) ? NaN : n;
+          };
+
+          // Validate coordinates and filter pharmacies within bounds
+          const bounds = {
+            latMin: userLat - 0.1, // Example bounds, adjust as needed
+            latMax: userLat + 0.1,
+            lngMin: userLng - 0.1,
+            lngMax: userLng + 0.1,
+          };
+
+          result = result.filter((item: any) => {
+            const lat = parseCoord(item.lt);
+            const lng = parseCoord(item.lg);
+            return !isNaN(lat) && !isNaN(lng);
+          });
+
+          // Debugging: Log distances for pharmacies
+          try { console.info(JSON.stringify({ ts: new Date().toISOString(), route: '/api/pharmacies', msg: 'user_coordinates', userLat, userLng })); } catch (_) {}
+          result.forEach((item: any) => {
+            const lat = parseCoord(item.lt);
+            const lng = parseCoord(item.lg);
+            const dist = distance(userLat, userLng, lat, lng);
+            try { console.info(JSON.stringify({ ts: new Date().toISOString(), route: '/api/pharmacies', id: item.im, name: item.nm, lat, lng, distance: dist })); } catch (_) {}
+          });
+
+          // Sort pharmacies by distance
           result = result.slice().sort((a: any, b: any) => {
-            const dA = distance(userLat, userLng, parseFloat(a.local_lat || a.lat || a.lt), parseFloat(a.local_lng || a.lng || a.lg));
-            const dB = distance(userLat, userLng, parseFloat(b.local_lat || b.lat || b.lt), parseFloat(b.local_lng || b.lng || b.lg));
+            const aLat = parseCoord(a.lt);
+            const aLng = parseCoord(a.lg);
+            const bLat = parseCoord(b.lt);
+            const bLng = parseCoord(b.lg);
+            const dA = distance(userLat, userLng, aLat, aLng);
+            const dB = distance(userLat, userLng, bLat, bLng);
             return dA - dB;
           });
         }
@@ -255,7 +415,7 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
   const _allowDebug = (process.env.NODE_ENV || '').toLowerCase() !== 'production' || process.env.ALLOW_DEBUG === 'true';
   if (_allowDebug) {
     router.get('/debug/farmanet', async (req: Request, res: Response) => {
-      const func = String(req.query.func || 'locales_regiones');
+      const func = String(req.query.func || 'regiones');
       const region = req.query.region as string | undefined;
       const apiBase = FARMANET_API_BASE;
       try {
@@ -263,8 +423,10 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
         const params = new URLSearchParams({ func });
         if (region) params.append('region', region);
         const response = await postToFarmanet(params, apiBase, cookieHeader, 10000);
+        try { console.info(JSON.stringify({ ts: new Date().toISOString(), route: '/debug/farmanet', func, status: response.status, isJson: response.isJson })); } catch (_) {}
         return res.json({ ok: true, status: response.status, headers: response.headers, preview: String(response.preview).slice(0, 2000), isJson: response.isJson });
       } catch (err) {
+        try { console.error(JSON.stringify({ ts: new Date().toISOString(), route: '/debug/farmanet', func, error: String(err).slice(0, 500) })); } catch (_) {}
         return res.status(500).json({ ok: false, error: String(err).slice(0, 1000) });
       }
     });
