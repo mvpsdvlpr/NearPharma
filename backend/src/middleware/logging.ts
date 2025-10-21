@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 
-const SENSITIVE_KEYS = ['password', 'token', 'authorization', 'auth', 'cookie', 'set-cookie'];
+const SENSITIVE_KEYS = ['password', 'token', 'authorization', 'auth', 'cookie', 'set-cookie', 'set_cookie'];
+
+const SENSITIVE_HEADER_KEYS = ['authorization', 'cookie', 'set-cookie', 'proxy-authorization'];
 
 function maskSensitive(obj: any): any {
   if (obj == null) return obj;
@@ -61,6 +63,19 @@ export default function requestLogger() {
         const durationMs = Math.round((diff[0] * 1e3) + (diff[1] / 1e6) * 1000) / 1000; // ms with fractional
         const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip || '').toString().split(',')[0].trim();
 
+        // Mask headers (do not include raw headers in logs)
+        const maskedHeaders: any = {};
+        try {
+          for (const hk of Object.keys(req.headers || {})) {
+            const lk = hk.toLowerCase();
+            if (SENSITIVE_HEADER_KEYS.includes(lk)) {
+              maskedHeaders[hk] = '***';
+            } else {
+              maskedHeaders[hk] = req.headers[hk];
+            }
+          }
+        } catch (_) {}
+
         const logObj: any = {
           ts: new Date().toISOString(),
           method: req.method,
@@ -68,6 +83,7 @@ export default function requestLogger() {
           status: res.statusCode,
           duration_ms: durationMs,
           client_ip: clientIp,
+          headers: Object.keys(maskedHeaders).length ? maskedHeaders : undefined,
           query: Object.keys(req.query || {}).length ? req.query : undefined,
           params: Object.keys(req.params || {}).length ? req.params : undefined,
         };
@@ -82,7 +98,10 @@ export default function requestLogger() {
         // Add a small preview of the response body if captured
         try {
           if (responseBody) {
-            logObj.response_preview = truncate(responseBody, 2000);
+            // If response appears to be HTML, keep a smaller preview
+            const ct = (res.getHeader && res.getHeader('content-type')) || '';
+            const isHtml = String(ct).toLowerCase().includes('text/html');
+            logObj.response_preview = truncate(responseBody, isHtml ? 500 : 2000);
           }
         } catch (_) {}
 

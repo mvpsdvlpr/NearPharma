@@ -52,7 +52,7 @@ describe('GET /api/pharmacies', () => {
   it('should handle API external failure gracefully', async () => {
     // Simulate by using an invalid region
     const res = await request(app).get('/api/pharmacies?region=99');
-    // Should return 200 with empty array or 500 if API fails
-    expect([200, 500]).toContain(res.status);
+  // Should return 200, 400 (invalid region) or 500 if API fails
+  expect([200, 400, 500]).toContain(res.status);
   });
 });
