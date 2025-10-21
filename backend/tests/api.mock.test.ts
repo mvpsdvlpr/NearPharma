@@ -44,7 +44,11 @@ app.use('/api', createApiRouter(cache));
 
 describe('GET /api/pharmacies (mocked)', () => {
   beforeEach(() => {
-    mockedAxios.get.mockResolvedValue({ data: fakeData });
+    // Mock preflight GET (may be called) to return empty headers
+    mockedAxios.get.mockResolvedValue({ data: '', headers: {} as any, status: 200 });
+    // Mock POST to return arraybuffer-like data
+    const buf = Buffer.from(JSON.stringify(fakeData), 'utf8');
+    mockedAxios.post.mockResolvedValue({ data: buf, headers: { 'content-type': 'application/json' }, status: 200 } as any);
     cache.clear();
   });
 
@@ -79,14 +83,15 @@ describe('GET /api/pharmacies (mocked)', () => {
   });
 
   it('should return 500 if API throws error', async () => {
-    mockedAxios.get.mockRejectedValueOnce(new Error('API down'));
+    mockedAxios.post.mockRejectedValueOnce(new Error('API down'));
     const res = await request(app).get('/api/pharmacies?region=7');
     expect(res.status).toBe(500);
     expect(res.body.error).toBe('External API error');
   });
 
   it('should return 200 with empty array if API returns empty', async () => {
-    mockedAxios.get.mockResolvedValueOnce({ data: [] });
+    const buf = Buffer.from(JSON.stringify([]), 'utf8');
+    mockedAxios.post.mockResolvedValueOnce({ data: buf, headers: { 'content-type': 'application/json' }, status: 200 } as any);
     const res = await request(app).get('/api/pharmacies?region=7');
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
