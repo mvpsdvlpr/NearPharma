@@ -218,6 +218,57 @@ export async function handleFarmanetCompat(req: Request, res: Response) {
 // Permite inyectar cache para testing
 export function createApiRouter(cacheInstance?: Cache<any>): Router {
   const router = express.Router();
+  // Version endpoint will be mounted under both /api and /mfarmacias
+  router.get('/version', async (req: Request, res: Response) => {
+    try {
+      // Attempt to read package.json version
+      let pkgVersion = '0.0.0';
+      try {
+        // require relative path from backend package.json
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const pkg = require('../../package.json');
+        pkgVersion = pkg.version || pkgVersion;
+      } catch (_) {
+        // ignore
+      }
+
+      // Try to get git commit and branch info; if not available (e.g., on Vercel build without .git)
+      let commit = null;
+      let branch = null;
+      try {
+        const { execSync } = await import('child_process');
+        commit = String(execSync('git rev-parse --short HEAD')).trim();
+        branch = String(execSync('git rev-parse --abbrev-ref HEAD')).trim();
+      } catch (_) {
+        // ignore — fallback to env variables
+        commit = process.env.GIT_COMMIT_SHA || process.env.VERCEL_GIT_COMMIT_SHA || null;
+        branch = process.env.GIT_BRANCH || process.env.VERCEL_GIT_COMMIT_REF || null;
+      }
+
+      const buildTimeIso = process.env.BUILD_TIME || new Date().toISOString();
+      // Format build time into DDMMYYYY.HHMM for label (example: 20102025.2214 -> 20-10-2025 22:14)
+      let buildLabel = null;
+      try {
+        const d = new Date(buildTimeIso);
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const dd = pad(d.getUTCDate());
+        const mm = pad(d.getUTCMonth() + 1);
+        const yyyy = d.getUTCFullYear();
+        const hh = pad(d.getUTCHours());
+        const min = pad(d.getUTCMinutes());
+        buildLabel = `${dd}${mm}${yyyy}.${hh}${min}`;
+      } catch (_) {
+        buildLabel = process.env.BUILD_TIME || null;
+      }
+
+      const channel = (process.env.RELEASE_CHANNEL || 'beta');
+      const label = `${pkgVersion} - ${channel} - build ${buildLabel}`;
+
+      return res.json({ ok: true, version: pkgVersion, label, commit, branch, buildTime: buildTimeIso, env: process.env.NODE_ENV || 'development' });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
   const cache = cacheInstance || new Cache<any>();
   const CACHE_TTL = 60 * 1000; // 1 minute
 
