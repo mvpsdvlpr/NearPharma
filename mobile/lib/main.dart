@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'api_client.dart';
+import 'src/logger.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:math';
 import 'dart:async';
@@ -22,8 +23,8 @@ void main() async {
       MyApp.packageBuild = info.buildNumber;
       MyApp.appVersion = '${info.version}+${info.buildNumber}';
     }
-  } catch (_) {
-    // ignore and use compile-time fallback
+  } catch (e, st) {
+    AppLogger.d('PackageInfo.fromPlatform failed, using compile-time fallback', e, st);
   }
   runApp(const MyApp());
 }
@@ -172,14 +173,18 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
           for (final c in list) {
             try {
               map[c['id'].toString()] = c['nombre'].toString();
-            } catch (_) {}
+            } catch (e, st) {
+              AppLogger.d('parse comuna entry failed in _loadAllComunas', e, st);
+            }
           }
           setState(() {
             comunasMap = map;
           });
         }
       }
-    } catch (_) {}
+    } catch (e, st) {
+      AppLogger.d('_loadTipos error', e, st);
+    }
   }
 
   Future<String> _apiBase() async {
@@ -286,7 +291,9 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
           for (final c in comunasList) {
             try {
               comunasMap[c['id'].toString()] = c['nombre'].toString();
-            } catch (_) {}
+            } catch (e, st) {
+              AppLogger.d('parse comuna entry failed in _loadComunas', e, st);
+            }
           }
           // Do not preselect a comuna; user must choose
           comunaSeleccionada = null;
@@ -351,10 +358,14 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
                   seen.add(id);
                   farmaciasList.add(l);
                 }
-              } catch (_) {}
+              } catch (e, st) {
+                AppLogger.d('failed to extract id for local entry', e, st);
+              }
             }
           }
-        } catch (_) {}
+        } catch (e, st) {
+          AppLogger.d('failed to parse region response for locales', e, st);
+        }
       }
     } else {
       final bodyMap = <String, String>{'func': 'region', 'filtro': tipo, 'region': regionSeleccionada ?? '', 'hora': hora};
@@ -369,7 +380,13 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
   // Debug: print raw region response
-  debugPrint('DEBUG region response: ${resp.body}');
+  // Log region response preview via AppLogger
+  try {
+    final preview = resp.body.length > 1000 ? resp.body.substring(0, 1000) + '...[truncated]' : resp.body;
+    AppLogger.d('region response preview: $preview');
+  } catch (e, st) {
+    AppLogger.d('region response preview failed to build', e, st);
+  }
         if (data is Map && data['respuesta'] != null && data['respuesta']['locales'] != null) {
           farmaciasList = List<dynamic>.from(data['respuesta']['locales']);
         }
@@ -403,7 +420,9 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
             farmaciasList = List<dynamic>.from(data);
             if (farmaciasList.isNotEmpty) break;
           }
-        } catch (_) {}
+        } catch (e, st) {
+          AppLogger.d('fallback region request failed for filter $alt', e, st);
+        }
       }
 
       if (farmaciasList.isEmpty) {
@@ -434,15 +453,21 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
 
           // Check comuna id
           final cm = (f['cm'] ?? f['comuna'] ?? f['comuna_id'] ?? f['comunaId'])?.toString();
-          if (cm != null && cm == targetComunaId) return true;
+          if (cm != null && cm == targetComunaId) {
+            return true;
+          }
 
           // Check comuna name
           final cname = (f['comuna_nombre'] ?? f['comunaNombre'] ?? f['comuna_nombre_local'] ?? f['comuna'])?.toString() ?? '';
-          if (cname.toLowerCase().contains(targetComunaName.toLowerCase())) return true;
+          if (cname.toLowerCase().contains(targetComunaName.toLowerCase())) {
+            return true;
+          }
 
           // Check address
           final dr = (f['dr'] ?? f['direccion'] ?? f['local_dr'] ?? f['local_direccion'])?.toString() ?? '';
-          if (dr.toLowerCase().contains(targetComunaName.toLowerCase())) return true;
+          if (dr.toLowerCase().contains(targetComunaName.toLowerCase())) {
+            return true;
+          }
         } catch (_) {}
         return false;
       }).toList();
@@ -480,6 +505,20 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
     return '${two(now.hour)}:${two(now.minute)}:${two(now.second)}';
   }
 
+  // Safe parse helper: returns null when parse fails
+  double? _safeParseDouble(String? s) {
+    if (s == null) return null;
+    try {
+      final cleaned = s.trim().replaceAll(',', '.');
+      final m = RegExp(r'-?\d+(?:\.\d+)?').firstMatch(cleaned);
+      if (m == null) return null;
+      return double.tryParse(m.group(0) ?? '');
+    } catch (e, st) {
+      AppLogger.d('safeParseDouble failed for input: $s', e, st);
+      return null;
+    }
+  }
+
   // Load regiones (similar to web func=regiones)
   Future<void> _loadRegiones() async {
     try {
@@ -496,14 +535,18 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
         for (final r in regionesList) {
           try {
             map[r['id'].toString()] = r['nombre'].toString();
-          } catch (_) {}
+          } catch (e, st) {
+            AppLogger.d('failed to compute id in sorted mapping', e, st);
+          }
         }
         setState(() {
           regiones = regionesList;
           regionesMap = map;
         });
       }
-    } catch (_) {}
+    } catch (e, st) {
+      AppLogger.d('_loadRegiones top-level catch', e, st);
+    }
   }
 
   // Load fechas (func=fechas) and convert map to list of {id,label}
@@ -529,7 +572,9 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
           fechas = out;
         });
       }
-    } catch (_) {}
+    } catch (e, st) {
+      AppLogger.d('_loadFechas top-level catch', e, st);
+    }
   }
 
   String _stripHtml(String? s) {
@@ -618,7 +663,12 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
   final resp = await _postForm(body);
       if (resp.statusCode == 200) {
   // Debug: print raw local response
-  debugPrint('DEBUG local(${body['im'] ?? 'no-im'}) response: ${resp.body}');
+  try {
+    final preview = resp.body.length > 1000 ? resp.body.substring(0, 1000) + '...[truncated]' : resp.body;
+    AppLogger.d('local response im=${body['im'] ?? 'no-im'} preview: $preview');
+  } catch (e, st) {
+    AppLogger.d('local response preview failed to build', e, st);
+  }
         final data = json.decode(resp.body);
         if (data is Map && data['respuesta'] != null) {
           final localResp = data['respuesta']['local'];
@@ -788,9 +838,12 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
               return ai.compareTo(bi);
             });
           });
-        } catch (_) {}
+        } catch (e, st) {
+          AppLogger.d('_ensureLocation: reordering mapping failed', e, st);
+        }
       }
-    } catch (_) {
+    } catch (e, st) {
+      AppLogger.d('_ensureLocation top-level failed', e, st);
       currentPosition = null;
     }
   }
@@ -1047,9 +1100,10 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
                                     double? lat;
                                     double? lng;
                                     try {
-                                      lat = double.parse((f['lt'] ?? f['lat'] ?? '').toString());
-                                      lng = double.parse((f['lg'] ?? f['lng'] ?? '').toString());
-                                    } catch (_) {
+                                      lat = _safeParseDouble((f['lt'] ?? f['lat'] ?? '').toString());
+                                      lng = _safeParseDouble((f['lg'] ?? f['lng'] ?? '').toString());
+                                    } catch (e, st) {
+                                      AppLogger.d('safe parse lat/lng failed', e, st);
                                       lat = null; lng = null;
                                     }
                                     await _openMaps(direccion, comunaNombre, regionNombre, lat: lat, lng: lng);
