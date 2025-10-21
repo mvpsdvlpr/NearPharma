@@ -500,6 +500,15 @@ export function createApiRouter(cacheInstance?: Cache<any>): Router {
       res.json({ ok: true, now: new Date().toISOString(), env: process.env.NODE_ENV || 'dev' });
     });
   } // end _allowDebug
+  // Health endpoint (lightweight)
+  router.get('/health', async (req: Request, res: Response) => {
+    try {
+      const stats = cache.getMetrics ? cache.getMetrics() : { hits: 0, misses: 0 };
+      return res.json({ ok: true, uptime: process.uptime(), cache: stats });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
   // Exponer el cache para testing
   (router as any)._cache = cache;
   return router;
