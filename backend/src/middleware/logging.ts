@@ -59,8 +59,9 @@ export default function requestLogger() {
     // When finished, log structured info
     res.on('finish', () => {
       try {
-        const diff = process.hrtime(start);
-        const durationMs = Math.round((diff[0] * 1e3) + (diff[1] / 1e6) * 1000) / 1000; // ms with fractional
+  const diff = process.hrtime(start);
+  // diff[0] = seconds, diff[1] = nanoseconds
+  const durationMs = Math.round((diff[0] * 1000) + (diff[1] / 1e6)); // milliseconds
         const clientIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip || '').toString().split(',')[0].trim();
 
         // Mask headers (do not include raw headers in logs)

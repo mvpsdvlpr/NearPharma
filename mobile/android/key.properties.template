@@ -1,0 +1,11 @@
+# Copy this file to key.properties and fill the values. Do NOT commit your real key.properties.
+# Example:
+# storePassword=your-store-password
+# keyPassword=your-key-password
+# keyAlias=my-key-alias
+# storeFile=/absolute/path/to/keystore.jks
+
+storePassword=
+keyPassword=
+keyAlias=
+storeFile=

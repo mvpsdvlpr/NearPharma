@@ -26,7 +26,11 @@ class Cache<T> {
   async get(key: string): Promise<T | undefined> {
     // check local first
     const entry = this.store.get(key);
-    if (entry && Date.now() <= entry.expires) return entry.value;
+    if (entry && Date.now() <= entry.expires) {
+      // record a hit for observability
+      this.hits++;
+      return entry.value;
+    }
     // local miss
     this.misses++;
     // if upstash configured, try remote
