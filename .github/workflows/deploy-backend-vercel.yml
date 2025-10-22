@@ -39,16 +39,57 @@ jobs:
         run: npm install -g vercel@28
 
       - name: Deploy to Vercel
+        id: deploy
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           # If required secrets are not set, skip deploy (useful for PRs/feature branches)
-          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
-            echo "Vercel secrets not set (VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID). Skipping deploy.";
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "Vercel secrets not set (VERCEL_TOKEN / VERCEL_PROJECT_ID). Skipping deploy.";
             exit 0;
           fi
-          cd backend
-          # Use the Vercel CLI to deploy the current backend directory
-          vercel --cwd . --confirm --token $VERCEL_TOKEN --prod --yes
+          # If a custom project id is provided but no org id, skip deploy to avoid CLI error
+          if [[ -n "$VERCEL_PROJECT_ID" && -z "$VERCEL_ORG_ID" ]]; then
+            echo "VERCEL_PROJECT_ID is set but VERCEL_ORG_ID is missing. Skipping deploy to custom project.";
+            exit 0;
+          fi
+          # Deploy explicitly from the backend folder using the backend vercel.json
+          VERCEL_CLI_OPTS=(--cwd backend --local-config backend/vercel.json --token "$VERCEL_TOKEN" --yes)
+          # Capture the CLI output so we can extract the deployment URL (if present)
+          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+            echo "Deploying to production..."
+            DEPLOY_OUTPUT=$(vercel --prod "${VERCEL_CLI_OPTS[@]}" 2>&1 || true)
+          else
+            echo "Deploying preview..."
+            DEPLOY_OUTPUT=$(vercel "${VERCEL_CLI_OPTS[@]}" 2>&1 || true)
+          fi
+          # Print the entire CLI output for debugging
+          echo "--- vercel output start ---"
+          echo "$DEPLOY_OUTPUT"
+          echo "--- vercel output end ---"
+
+          # Try to extract the first vercel.app / vercel.pub URL from the output
+          DEPLOY_URL=$(echo "$DEPLOY_OUTPUT" | grep -Eo 'https?://[^ \)\"]+\.vercel\.(app|pub)\b' | head -n1 || true)
+          if [[ -n "$DEPLOY_URL" ]]; then
+            echo "Found deployment URL: $DEPLOY_URL"
+            # Expose as a job output for downstream steps
+            echo "deploy_url=$DEPLOY_URL" >> "$GITHUB_OUTPUT"
+          else
+            echo "No Vercel URL found in CLI output."
+          fi
+
+      - name: Smoke tests against deployed URL
+        if: ${{ always() && steps.deploy.outputs.deploy_url != '' }}
+        env:
+          DEPLOY_URL: ${{ steps.deploy.outputs.deploy_url }}
+        run: |
+          echo "Running smoke tests against $DEPLOY_URL"
+          set -euo pipefail
+          echo "GET /api/health"
+          curl -sS -w "\nHTTP_STATUS:%{http_code}\n" "$DEPLOY_URL/api/health" || true
+          echo "GET /api/version"
+          curl -sS -w "\nHTTP_STATUS:%{http_code}\n" "$DEPLOY_URL/api/version" || true
+          echo "GET /mfarmacias/debug/ping"
+          curl -sS -w "\nHTTP_STATUS:%{http_code}\n" "$DEPLOY_URL/mfarmacias/debug/ping" || true
