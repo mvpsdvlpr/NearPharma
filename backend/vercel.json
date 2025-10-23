@@ -4,8 +4,8 @@
     { "src": "src/app.ts", "use": "@vercel/node" }
   ],
   "routes": [
-    { "src": "/mfarmacias/(.*)", "dest": "/backend/src/app.ts" },
-    { "src": "/mfarmacias/mapa.php", "dest": "/backend/src/app.ts" },
-    { "src": "/api/(.*)", "dest": "/backend/src/app.ts" }
+    { "src": "/mfarmacias/(.*)", "dest": "/src/app.ts" },
+    { "src": "/mfarmacias/mapa.php", "dest": "/src/app.ts" },
+    { "src": "/api/(.*)", "dest": "/src/app.ts" }
   ]
 }
