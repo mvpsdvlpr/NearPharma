@@ -48,6 +48,7 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
             echo "Vercel secrets missing — skipping deploy and smoke test";
@@ -115,9 +116,15 @@ jobs:
           echo "Running smoke test against: $url/mfarmacias/debug/ping"
           # Give the deployment a few seconds to finish
           sleep 5
+          # Build URL with optional bypass token if available
+          BYPASS_QS=''
+          if [[ -n "$VERCEL_AUTOMATION_BYPASS_SECRET" ]]; then
+            BYPASS_QS="?x-vercel-set-bypass-cookie=true&x-vercel-protection-bypass=$VERCEL_AUTOMATION_BYPASS_SECRET"
+          fi
+          TARGET="$url/mfarmacias/debug/ping$BYPASS_QS"
           # perform a GET, capture status and body
-          PING_BODY=$(curl -sS "$url/mfarmacias/debug/ping" || true)
-          PING_STATUS=$(echo "$PING_BODY" | { http_code=$(curl -s -o /dev/null -w "%{http_code}" "$url/mfarmacias/debug/ping" || echo "000"); echo "$http_code"; } )
+          PING_BODY=$(curl -sS "$TARGET" || true)
+          PING_STATUS=$(echo "$PING_BODY" | { http_code=$(curl -s -o /dev/null -w "%{http_code}" "$TARGET" || echo "000"); echo "$http_code"; } )
           echo "Deployed: $url"
           echo "Smoke test status: $PING_STATUS"
           echo "Smoke test body: $PING_BODY"
