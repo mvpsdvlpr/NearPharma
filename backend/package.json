@@ -2,7 +2,7 @@
   "name": "nearpharma-backend",
   "version": "1.0.0",
   "description": "NearPharma application to find pharmacies.",
-  "main": "src/app.ts",
+  "main": "dist/index.js",
   "scripts": {
     "start": "ts-node src/index.ts",
   "build": "tsc",

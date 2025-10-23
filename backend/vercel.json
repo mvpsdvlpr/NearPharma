@@ -1,11 +1,11 @@
 {
   "version": 2,
   "builds": [
-    { "src": "src/app.ts", "use": "@vercel/node" }
+    { "src": "dist/app.js", "use": "@vercel/node" }
   ],
   "routes": [
-    { "src": "/mfarmacias/(.*)", "dest": "/src/app.ts" },
-    { "src": "/mfarmacias/mapa.php", "dest": "/src/app.ts" },
-    { "src": "/api/(.*)", "dest": "/src/app.ts" }
+    { "src": "/mfarmacias/(.*)", "dest": "/dist/app.js" },
+    { "src": "/mfarmacias/mapa.php", "dest": "/dist/app.js" },
+    { "src": "/api/(.*)", "dest": "/dist/app.js" }
   ]
 }
