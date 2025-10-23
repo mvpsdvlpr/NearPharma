@@ -47,13 +47,20 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
         run: |
           if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
             echo "Vercel secrets missing — skipping deploy and smoke test";
             exit 0;
           fi
           set -e
+          # If a custom project id is provided but no org id, the Vercel CLI
+          # will error. Fail-safe: skip deploy with an informative message so
+          # the workflow doesn't attempt a deploy that will always fail.
+          if [[ -n "$VERCEL_PROJECT_ID" && -z "$VERCEL_ORG_ID" ]]; then
+            echo "VERCEL_PROJECT_ID is set but VERCEL_ORG_ID is missing. Skipping deploy to custom project.";
+            exit 0;
+          fi
           # Deploy from the backend folder explicitly. Use --cwd and --local-config to
           # make sure the Vercel CLI targets the correct project root (avoids "Root
           # Directory does not exist" errors when the Vercel project is configured
@@ -74,8 +81,31 @@ jobs:
           if [ -z "$url" ]; then
             url=$(echo "$out" | grep -Eo 'https?://[a-zA-Z0-9._-]+\.(vercel\.app|vercel\.pub)' | head -n1 || true)
           fi
+          # If still no URL, try listing recent deployments via the Vercel CLI
           if [ -z "$url" ]; then
-            echo "No URL returned by vercel CLI, skipping smoke test.";
+            echo "No URL found in deploy output; attempting to list recent deployments via Vercel CLI..."
+            # Try both common list commands; prefer JSON output and parse with jq (installed earlier)
+            deploy_list=$(vercel deployments list --limit 5 --json "${VERCEL_CLI_OPTS[@]}" 2>/dev/null || vercel ls --limit 5 --json "${VERCEL_CLI_OPTS[@]}" 2>/dev/null || true)
+            if [ -n "$deploy_list" ]; then
+              # Try multiple likely JSON shapes: .[0].url, .[0].name, .[0].meta.url
+              parsed_url=$(echo "$deploy_list" | jq -r '.[0].url // .[0].meta.url // .[0].name // empty' 2>/dev/null || true)
+              if [ -n "$parsed_url" ]; then
+                # ensure it has https:// prefix
+                if [[ "$parsed_url" =~ ^https?:// ]]; then
+                  url="$parsed_url"
+                else
+                  url="https://$parsed_url"
+                fi
+                echo "Found URL from deployments list: $url"
+              else
+                echo "Could not parse URL from deployments list output.";
+              fi
+            else
+              echo "vercel deployments list returned no output or failed.";
+            fi
+          fi
+          if [ -z "$url" ]; then
+            echo "No URL available after fallback. Skipping smoke test.";
             exit 0;
           fi
 
