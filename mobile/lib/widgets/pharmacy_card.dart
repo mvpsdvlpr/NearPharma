@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:url_launcher/url_launcher.dart';
 // 'dart:typed_data' not needed explicitly; ByteData/Uint8List available via services import
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -7,6 +8,50 @@ import '../src/logger.dart';
 
 // Use bundled images during tests/development to avoid remote downloads.
 const bool kUseBundledImages = true;
+
+// Utility: convert HSL (h in 0..360, s and l in 0..100) to a Flutter Color.
+Color hslToColor(double h, double s, double l) {
+  s /= 100;
+  l /= 100;
+  final c = (1 - (2 * l - 1).abs()) * s;
+  final x = c * (1 - ((h / 60) % 2 - 1).abs());
+  final m = l - c / 2;
+  double r = 0, g = 0, b = 0;
+  if (0 <= h && h < 60) {
+    r = c;
+    g = x;
+    b = 0;
+  } else if (60 <= h && h < 120) {
+    r = x;
+    g = c;
+    b = 0;
+  } else if (120 <= h && h < 180) {
+    r = 0;
+    g = c;
+    b = x;
+  } else if (180 <= h && h < 240) {
+    r = 0;
+    g = x;
+    b = c;
+  } else if (240 <= h && h < 300) {
+    r = x;
+    g = 0;
+    b = c;
+  } else {
+    r = c;
+    g = 0;
+    b = x;
+  }
+  final R = ((r + m) * 255).round();
+  final G = ((g + m) * 255).round();
+  final B = ((b + m) * 255).round();
+  return Color.fromARGB(255, R.clamp(0, 255), G.clamp(0, 255), B.clamp(0, 255));
+}
+
+final Color kPrimaryColor = hslToColor(142, 76, 36);
+final Color kPrimaryForeground = hslToColor(0, 0, 100);
+final Color kDestructiveColor = hslToColor(0, 84, 60);
+final Color kDestructiveForeground = hslToColor(0, 0, 98);
 
 /// Minimal adaptive network image that prefers SVG when possible.
 class AdaptiveNetworkImage extends StatefulWidget {
@@ -346,39 +391,112 @@ class PharmacyCard extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Row(children: [
-          ClipRRect(borderRadius: BorderRadius.circular(8), child: SizedBox(width: 56, height: 56, child: logoWidget)),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(nombre, style: Theme.of(context).textTheme.titleLarge, maxLines: 2, overflow: TextOverflow.ellipsis),
-              if (horarioDia.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4.0), child: Text(horarioDia, style: Theme.of(context).textTheme.bodySmall, maxLines: 2, overflow: TextOverflow.ellipsis)),
-              const SizedBox(height: 8),
-              Text(direccion, style: Theme.of(context).textTheme.bodyMedium, maxLines: 2, overflow: TextOverflow.ellipsis),
-              Text('$comunaNombre, $regionNombre', style: Theme.of(context).textTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
-              if (telefonoLocal.toString().isNotEmpty) Text('Tel: $telefonoLocal', style: Theme.of(context).textTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
-            ]),
-          ),
-          const SizedBox(width: 12),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 110),
-            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(color: Colors.grey.shade600, borderRadius: BorderRadius.circular(8)),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [SizedBox(width: 16, height: 16, child: iconWidget), const SizedBox(width: 8), Flexible(child: Text(pillText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700), maxLines: 1, overflow: TextOverflow.ellipsis))]),
+        padding: const EdgeInsets.all(14.0),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // Header: title + map pin icon
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: Text(nombre, style: Theme.of(context).textTheme.titleLarge, maxLines: 2, overflow: TextOverflow.ellipsis)),
+            const SizedBox(width: 8),
+            // Use the provided app icon as a map-pin substitute
+            SizedBox(width: 28, height: 28, child: SvgPicture.asset('assets/icons/icon_pharmacy.svg', width: 28, height: 28, color: Theme.of(context).iconTheme.color)),
+          ]),
+          const SizedBox(height: 8),
+
+          // Today's hours
+          if (horarioDia.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6.0),
+              child: Text(
+                '${_weekdaySpanish(DateTime.now().weekday)}: $horarioDia',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
             ),
-            const SizedBox(height: 8),
-      disableNetworkImages
-        ? const SizedBox(width: 20, height: 20)
-        : (kUseBundledImages
-          ? AssetSafeImage(assetPath: 'assets/img/map.png', width: 20, height: 20, fit: BoxFit.contain, semanticLabel: 'Pin')
-          : AssetSafeImage(assetPath: 'assets/img/map.png', width: 20, height: 20, fit: BoxFit.contain, semanticLabel: 'Pin')),
+
+          // Weekly schedule (best-effort extraction)
+          Builder(builder: (ctx) {
+            final week = _extractWeekSchedule(horario);
+            if (week.isEmpty) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8.0),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Horario Semanal', style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                ...week.map((s) => Text(s, style: Theme.of(context).textTheme.bodySmall)),
+              ]),
+            );
+          }),
+
+          // Address
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: Text('Dirección: $direccion', style: Theme.of(context).textTheme.bodyMedium),
+          ),
+
+          // Footer: directions button + status badge
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            OutlinedButton.icon(
+              onPressed: () async {
+                final query = direccion.isNotEmpty ? direccion : '$comunaNombre, $regionNombre';
+                final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(query)}');
+                try {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                } catch (e, st) {
+                  AppLogger.d('launch maps failed', e, st);
+                }
+              },
+              icon: const Icon(Icons.navigation, size: 16),
+              label: const Text('¿Cómo llegar?'),
+              style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10)),
+            ),
+
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: (pillText.toLowerCase().contains('turno')) ? kPrimaryColor : kDestructiveColor,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(pillText, style: TextStyle(color: (pillText.toLowerCase().contains('turno')) ? kPrimaryForeground : kDestructiveForeground, fontWeight: FontWeight.w700)),
+            ),
           ])
-        )
         ]),
       ),
     );
+  }
+
+  // Helper: weekday in Spanish (lowercase as in design)
+  String _weekdaySpanish(int weekday) {
+    const names = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo'];
+    if (weekday < 1 || weekday > 7) return '';
+    return names[weekday - 1];
+  }
+
+  // Best-effort weekly schedule extractor. Looks for common keys and returns readable lines.
+  List<String> _extractWeekSchedule(Map<String, dynamic> horario) {
+    if (horario == null) return [];
+    try {
+      if (horario is Map) {
+        // If explicitly provided as a list
+        final maybeList = horario['semana'] ?? horario['week'] ?? horario['horarios'];
+        if (maybeList is List) return maybeList.map((e) => e.toString()).toList();
+
+        // Look for day keys
+        final keys = ['lunes','martes','miercoles','miércoles','jueves','viernes','sabado','sábado','domingo','lun','mar','mie','jue','vie','sab','dom'];
+        final out = <String>[];
+        final seen = <String>{};
+        for (final key in keys) {
+          if (horario.containsKey(key)) {
+            final val = horario[key];
+            final label = key[0].toUpperCase() + key.substring(1);
+            final s = val == null ? '' : val.toString().replaceAll(RegExp(r'<[^>]+>'), '').trim();
+            if (s.isNotEmpty && !seen.contains(s)) {
+              out.add('$label: $s');
+              seen.add(s);
+            }
+          }
+        }
+        return out;
+      }
+    } catch (_) {}
+    return [];
   }
 }
