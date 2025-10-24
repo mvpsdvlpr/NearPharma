@@ -74,6 +74,7 @@ flutter:
     # Optional: copy the site's `img/` folder into `mobile/assets/img/` and enable kUseBundledImages in the widget
     - assets/img/
     - assets/icons/
+    - assets/icons/
 
 # Launcher icons configuration (flutter_launcher_icons)
 flutter_icons:

@@ -10,6 +10,7 @@ import 'dart:math';
 import 'dart:async';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'widgets/pharmacy_card.dart';
+import 'theme.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 void main() async {
@@ -50,35 +51,8 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
   title: 'NearPharma',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        // Softer, friendlier palette: use muted greens and greys for controls
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green.shade600),
-        scaffoldBackgroundColor: Colors.grey[50],
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.black87,
-          elevation: 0,
-          centerTitle: true,
-        ),
-        // cardTheme has different types across Flutter SDK versions; set cardColor
-        // and rely on Card's default shape to avoid SDK type mismatches.
-        cardColor: Colors.white,
-        textTheme: const TextTheme(
-          titleLarge: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-          bodyMedium: TextStyle(fontSize: 14, color: Colors.black87),
-          bodySmall: TextStyle(fontSize: 12, color: Colors.black54),
-        ),
-        iconTheme: IconThemeData(color: Colors.grey.shade700),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.grey.shade300,
-            foregroundColor: Colors.black87,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            elevation: 0,
-          ),
-        ),
-      ),
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
   home: const TipoFarmaciaScreen(),
     );
   }
