@@ -5,7 +5,6 @@ import requestLogger from './middleware/logging';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { createApiRouter, handleFarmanetCompat } from './routes/api';
 import axios from 'axios';
-import { sanitizeInputs } from './middleware/security';
 
 const app = express();
 
@@ -58,8 +57,8 @@ app.use(express.json());
 // Soporte para application/x-www-form-urlencoded (como Farmanet)
 app.use(express.urlencoded({ extended: true }));
 
-// Input sanitization
-app.use(sanitizeInputs);
+// Note: global input sanitization middleware removed. Use route-level
+// validation (express-validator) and proper output encoding instead.
 const apiRouter = createApiRouter();
 
 // API routes

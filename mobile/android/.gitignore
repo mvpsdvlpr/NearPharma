@@ -3,6 +3,9 @@ gradle-wrapper.jar
 /captures/
 /gradlew
 /gradlew.bat
+# Keystore and key properties - do not commit real signing keys
+key.properties
+*.jks
 /local.properties
 GeneratedPluginRegistrant.java
 .cxx/

@@ -162,9 +162,14 @@ async function postToFarmanet(params: URLSearchParams, apiBase = FARMANET_API_BA
 
 // Handler para compatibilidad POST /mfarmacias/mapa.php
 export async function handleFarmanetCompat(req: Request, res: Response) {
-  const func = req.body.func || req.query.func;
+  // Validate inputs conservatively
+  const funcRaw = req.body.func || req.query.func;
+  const func = funcRaw ? String(funcRaw).trim() : '';
+  // Allowed funcs documented by Farmanet
+  const allowed = ['regiones', 'comunas', 'fechas', 'region', 'local', 'sector', 'iconos'];
   try {
     if (!func) return res.status(400).json({ correcto: false, error: 'Missing func parameter' });
+    if (!allowed.includes(func)) return res.status(400).json({ correcto: false, error: 'Func no soportado' });
     // Short-circuit for simple funcs that don't need cookie preflight in many cases
     if (func === 'iconos') {
       const params = new URLSearchParams({ func: 'iconos' });
@@ -177,32 +182,55 @@ export async function handleFarmanetCompat(req: Request, res: Response) {
     }
 
     // For other funcs, use preflight + unified post wrapper
+    // Use only the configured FARMANET_API_BASE — do not allow callers to override target
     const apiBase = FARMANET_API_BASE;
     const cookieHeader = await preflightGetCookies(apiBase);
-    const params = new URLSearchParams({ func: String(func) });
-    // append additional params if provided
-    const allowed = ['regiones', 'comunas', 'fechas', 'region', 'local', 'sector'];
-    if (!allowed.includes(String(func))) return res.status(400).json({ correcto: false, error: 'Func no soportado' });
-    // Map extra params
+    const params = new URLSearchParams({ func });
+    // Map and validate extra params conservatively
     if (func === 'comunas') {
       const region = req.body.region || req.query.region;
-      if (region) params.append('region', String(region));
+      if (region) {
+        const regionStr = String(region).trim();
+        if (!/^[0-9]{1,2}$/.test(regionStr)) return res.status(400).json({ correcto: false, error: 'Invalid region' });
+        params.append('region', regionStr);
+      }
     }
     if (func === 'region') {
       const region = req.body.region || req.query.region || '';
       const filtro = req.body.filtro || req.query.filtro;
       const fecha = req.body.fecha || req.query.fecha;
       const hora = req.body.hora || req.query.hora;
-      params.set('region', String(region));
-      if (filtro) params.append('filtro', String(filtro));
-      if (fecha) params.append('fecha', String(fecha));
-      if (hora) params.append('hora', String(hora));
+      const regionStr = String(region).trim();
+      if (!/^[0-9]{1,2}$/.test(regionStr)) return res.status(400).json({ correcto: false, error: 'Invalid region' });
+      params.set('region', regionStr);
+      if (filtro) {
+        const f = String(filtro).trim();
+        if (f.length > 200) return res.status(400).json({ correcto: false, error: 'Invalid filtro' });
+        params.append('filtro', f);
+      }
+      if (fecha) {
+        const f = String(fecha).trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(f) && !/^\d{2}\/\d{2}\/\d{4}$/.test(f)) return res.status(400).json({ correcto: false, error: 'Invalid fecha' });
+        params.append('fecha', f);
+      }
+      if (hora) {
+        const h = String(hora).trim();
+        // Accept HH:MM or HH:MM:SS format (mobile sends HH:MM:SS, web typically sends HH:MM)
+        if (!/^(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(h)) return res.status(400).json({ correcto: false, error: 'Invalid hora' });
+        params.append('hora', h);
+      }
     }
     if (func === 'local') {
       const im = req.body.im || req.query.im || '';
       const fecha = req.body.fecha || req.query.fecha;
-      params.set('im', String(im));
-      if (fecha) params.append('fecha', String(fecha));
+      const imStr = String(im).trim();
+      if (!/^[0-9A-Za-z_-]{1,40}$/.test(imStr)) return res.status(400).json({ correcto: false, error: 'Invalid im' });
+      params.set('im', imStr);
+      if (fecha) {
+        const f = String(fecha).trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(f) && !/^\d{2}\/\d{2}\/\d{4}$/.test(f)) return res.status(400).json({ correcto: false, error: 'Invalid fecha' });
+        params.append('fecha', f);
+      }
     }
 
     const result = await postToFarmanet(params, apiBase, cookieHeader);

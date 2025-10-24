@@ -365,13 +365,7 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       final bodies = <Map<String, String>>[];
       final b1 = {'func': 'region', 'filtro': 'turnos', 'region': regionSeleccionada ?? '', 'hora': hora};
       final b2 = {'func': 'region', 'filtro': 'urgencia', 'region': regionSeleccionada ?? '', 'hora': hora};
-      // Include user coordinates when available so server-side logging or sorting can use them
-      if (currentPosition != null) {
-        b1['lat'] = currentPosition!.latitude.toString();
-        b1['lng'] = currentPosition!.longitude.toString();
-        b2['lat'] = currentPosition!.latitude.toString();
-        b2['lng'] = currentPosition!.longitude.toString();
-      }
+      // Note: Coordinates are not sent to backend, following MVP pattern where location handling is frontend-only
       if (fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty) {
         b1['fecha'] = fechaSeleccionada!;
         b2['fecha'] = fechaSeleccionada!;
@@ -408,10 +402,7 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       if (tipo == 'turnos' && fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty) {
         bodyMap['fecha'] = fechaSeleccionada!;
       }
-      if (currentPosition != null) {
-        bodyMap['lat'] = currentPosition!.latitude.toString();
-        bodyMap['lng'] = currentPosition!.longitude.toString();
-      }
+      // Note: Coordinates are not sent to backend, following MVP pattern where location handling is frontend-only
       final resp = await _postForm(bodyMap);
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
@@ -439,10 +430,7 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
         try {
           final b = {'func': 'region', 'filtro': alt, 'region': regionSeleccionada ?? '', 'hora': hora};
           if (fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty) b['fecha'] = fechaSeleccionada!;
-          if (currentPosition != null) {
-            b['lat'] = currentPosition!.latitude.toString();
-            b['lng'] = currentPosition!.longitude.toString();
-          }
+          // Note: Coordinates are not sent to backend, following MVP pattern where location handling is frontend-only
           final resp = await _postForm(b);
           if (resp.statusCode != 200) continue;
           final data = json.decode(resp.body);
