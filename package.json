@@ -1,0 +1,25 @@
+{
+  "name": "nearpharma-monorepo",
+  "version": "1.0.0",
+  "description": "NearPharma monorepo with backend and mobile apps",
+  "private": true,
+  "scripts": {
+    "build": "cd backend && npm run build",
+    "start": "cd backend && npm start",
+    "dev": "cd backend && npm run dev",
+    "test": "cd backend && npm test",
+    "install-backend": "cd backend && npm install"
+  },
+  "workspaces": [
+    "backend"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mvpsdvlpr/NearPharma.git"
+  },
+  "author": "mvpsdvlpr",
+  "license": "MIT"
+}

@@ -1,0 +1,38 @@
+# ====================================
+# VERCEL IGNORE - MONOREPO CONFIGURATION
+# ====================================
+
+# MOBILE DIRECTORY - COMPLETELY IGNORE (1.3GB)
+mobile/
+mobile/**/*
+
+# ROOT LEVEL FILES - NOT NEEDED FOR BACKEND
+README.md
+.github/
+.gitignore
+node_modules/
+
+# BACKEND TEST FILES - NOT NEEDED IN PRODUCTION  
+backend/tests/
+backend/**/*.test.ts
+backend/**/*.test.js
+backend/jest.config.js
+
+# BACKEND DEVELOPMENT FILES - NOT NEEDED IN PRODUCTION
+backend/src/
+backend/tsconfig.json
+backend/README*.md
+backend/*.log
+
+# SENSITIVE FILES - SECURITY
+.env
+.env.*
+**/.env
+**/.env.*
+
+# KEEP ONLY ESSENTIAL BACKEND FILES
+!backend/dist/
+!backend/package.json
+!backend/package-lock.json
+!backend/vercel.json
+!backend/api/

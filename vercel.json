@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "backend/dist/index.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/mfarmacias/(.*)", "dest": "/backend/dist/index.js" },
+    { "src": "/mfarmacias/mapa.php", "dest": "/backend/dist/index.js" },
+    { "src": "/api/(.*)", "dest": "/backend/dist/index.js" },
+    { "src": "/(.*)", "dest": "/backend/dist/index.js" }
+  ]
+}
