@@ -1,2 +1,2 @@
 # Ignore only mobile directory - be very specific
-mobile/**
+!mobile
