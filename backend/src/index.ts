@@ -23,3 +23,6 @@ if (!process.env.VERCEL) {
 } else {
   console.log('Running in Vercel environment; skipping app.listen');
 }
+
+// Export for Vercel serverless
+export default app;

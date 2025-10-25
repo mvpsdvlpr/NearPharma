@@ -1,4 +1,24 @@
 {
   "version": 2,
-  "buildCommand": "npm run vercel-build"
+  "buildCommand": "npm run vercel-build",
+  "builds": [
+    {
+      "src": "backend/dist/index.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/backend/dist/index.js"
+    },
+    {
+      "src": "/mfarmacias/(.*)",
+      "dest": "/backend/dist/index.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/backend/dist/index.js"
+    }
+  ]
 }
