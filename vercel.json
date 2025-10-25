@@ -8,5 +8,5 @@
     { "src": "/mfarmacias/mapa.php", "dest": "/dist/index.js" },
     { "src": "/api/(.*)", "dest": "/dist/index.js" }
   ],
-  "outputDirectory": false
+  "outputDirectory": null
 }
