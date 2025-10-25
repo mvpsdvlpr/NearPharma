@@ -1,6 +1,5 @@
 {
   "version": 2,
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD mobile/",
   "builds": [
     { "src": "backend/dist/index.js", "use": "@vercel/node" }
   ],
