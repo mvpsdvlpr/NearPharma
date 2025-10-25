@@ -1,6 +1,5 @@
 {
   "version": 2,
-  "framework": null,
-  "outputDirectory": null,
-  "buildCommand": "npm run vercel-build"
+  "buildCommand": "npm run vercel-build",
+  "outputDirectory": "backend/dist"
 }
