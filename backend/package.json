@@ -5,8 +5,8 @@
   "main": "dist/index.js",
   "scripts": {
     "start": "ts-node src/index.ts",
-  "build": "tsc",
-  "vercel-build": "node ./scripts/generate_build_env.js && npm run build",
+    "build": "tsc",
+    "vercel-build": "node ./scripts/generate_build_env.js && npm run build",
     "start:prod": "node dist/index.js",
     "test": "jest --runInBand"
   },

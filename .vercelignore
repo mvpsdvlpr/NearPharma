@@ -1,22 +1,11 @@
-# Ignore big or sensitive folders at repo root so Vercel uploads only what's needed
-# Keep mobile and build artifacts out of uploaded bundle
-node_modules/
+# Only ignore mobile directory and common dev files
 mobile/
-build/
-dist/
-/.gradle/
-/.idea/
-/.vscode/
-*.iml
+node_modules/
+.git/
+.vercel/
+.vscode/
+.idea/
 *.log
-
-# Env files should not be uploaded
+.DS_Store
 .env
 .env.*
-
-# Ignore Vercel local state
-.vercel/
-
-# OS files
-.DS_Store
-.vscode/
