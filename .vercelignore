@@ -1,11 +1,2 @@
-# Only ignore mobile directory and common dev files
-mobile/
-node_modules/
-.git/
-.vercel/
-.vscode/
-.idea/
-*.log
-.DS_Store
-.env
-.env.*
+# Ignore only mobile directory - be very specific
+mobile/**

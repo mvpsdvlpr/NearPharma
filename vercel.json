@@ -1,14 +1,9 @@
 {
   "version": 2,
   "builds": [
-    { "src": "backend/dist/app.js", "use": "@vercel/node" }
-  ],
-  "routes": [
-    { "src": "/mfarmacias/(.*)", "dest": "/backend/dist/app.js" },
-    { "src": "/mfarmacias/mapa.php", "dest": "/backend/dist/app.js" },
-    { "src": "/api/(.*)", "dest": "/backend/dist/app.js" }
-  ],
-  "installCommand": "cd backend && npm install",
-  "buildCommand": "cd backend && npm run vercel-build",
-  "outputDirectory": "backend/dist"
+    {
+      "src": "backend/api/index.js",
+      "use": "@vercel/node"
+    }
+  ]
 }
