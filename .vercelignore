@@ -1,2 +1,19 @@
-# Ignore only mobile directory - be very specific
-!mobile
+# Ignore mobile directory completely
+mobile/
+mobile/**
+
+# Ignore root level files that aren't needed
+README.md
+.github/
+.git/
+
+# Ignore test files in backend
+backend/tests/
+backend/**/*.test.ts
+backend/**/*.test.js
+
+# Ignore sensitive files
+.env
+.env.*
+**/.env
+**/.env.*
