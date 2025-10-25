@@ -4,6 +4,9 @@ dist/
 .env
 *.log
 
+*.env.build
+.vercel
+*.github/
 # Flutter/Dart
 mobile/.dart_tool/
 mobile/.packages
