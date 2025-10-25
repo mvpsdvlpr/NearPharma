@@ -4,11 +4,12 @@
   "description": "NearPharma monorepo with backend and mobile apps",
   "private": true,
   "scripts": {
-    "build": "cd backend && npm run build",
+    "build": "echo 'Building backend only...' && cd backend && npm install && npm run build && echo 'Backend build complete. Mobile directory ignored.'",
     "start": "cd backend && npm start",
     "dev": "cd backend && npm run dev",
     "test": "cd backend && npm test",
-    "install-backend": "cd backend && npm install"
+    "install-backend": "cd backend && npm install",
+    "vercel-build": "echo 'Vercel build: Installing backend dependencies...' && cd backend && npm install && echo 'Building backend app...' && npm run build && echo 'Build complete. Mobile directory was ignored during this process.'"
   },
   "workspaces": [
     "backend"
