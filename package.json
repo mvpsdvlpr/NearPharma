@@ -1,7 +1,0 @@
-{
-  "name": "nearpharma-root",
-  "private": true,
-  "scripts": {
-    "vercel-build": "cd backend && npm ci && npm run build"
-  }
-}
