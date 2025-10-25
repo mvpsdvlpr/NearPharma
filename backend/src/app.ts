@@ -124,6 +124,20 @@ if (_allowDebug) {
   });
 } // end _allowDebug
 
+// Root endpoint
+app.get('/', (req: Request, res: Response) => {
+  res.json({ 
+    message: 'NearPharma API',
+    version: '1.0.0',
+    endpoints: {
+      api: '/api',
+      mfarmacias: '/mfarmacias',
+      health: '/api/health'
+    },
+    docs: 'https://github.com/mvpsdvlpr/NearPharma'
+  });
+});
+
 // 404 handler
 app.use((req: Request, res: Response) => {
   res.status(404).json({ error: 'Not found' });
