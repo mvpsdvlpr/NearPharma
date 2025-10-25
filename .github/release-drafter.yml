@@ -1,28 +1,21 @@
-name: Release Drafter
-on:
-  push:
-    branches:
-      - main
+name-template: 'v$NEXT_PATCH_VERSION'
+tag-template: 'v$NEXT_PATCH_VERSION'
+categories:
+  - title: '🚀 Features'
+    labels:
+      - feature
+  - title: '🐛 Fixes'
+    labels:
+      - fix
+  - title: '🧰 Chores'
+    labels:
+      - chore
+change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
+no-changes-template: '- No changes'
+template: |
+  ## What's changed
 
-release-drafter:
-  name-template: 'v$NEXT_PATCH_VERSION'
-  tag-template: 'v$NEXT_PATCH_VERSION'
-  categories:
-    - title: '🚀 Features'
-      labels:
-        - feature
-    - title: '🐛 Fixes'
-      labels:
-        - fix
-    - title: '🧰 Chores'
-      labels:
-        - chore
-  change-template: '- $TITLE @$AUTHOR (#$NUMBER)'
-  no-changes-template: '- No changes'
-  template: |
-    ## What's changed
+  $CHANGES
 
-    $CHANGES
-
-    --
-    _This release was generated automatically._
+  --
+  _This release was generated automatically._

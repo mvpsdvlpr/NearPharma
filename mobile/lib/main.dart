@@ -10,6 +10,7 @@ import 'dart:math';
 import 'dart:async';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'widgets/pharmacy_card.dart';
+import 'utils/pill.dart';
 import 'theme.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -34,7 +35,7 @@ class MyApp extends StatelessWidget {
   const MyApp({super.key});
   /// App version string. The build metadata (after '+') uses the current
   /// date in YYYYMMDD format so releases can be identified by release day.
-  ///
+  ///4
   /// Example: '1.0.0-beta+20251012'
   // Set this to the release date (format YYYYMMDD) when publishing a new version.
   // Example: '20251012' for October 12, 2025.
@@ -49,11 +50,12 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-  title: 'NearPharma',
+      title: 'NearPharma',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-  home: const TipoFarmaciaScreen(),
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      themeMode: ThemeMode.system,
+      home: const TipoFarmaciaScreen(),
     );
   }
 }
@@ -74,6 +76,10 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
   int? tipoSeleccionado;
   List<dynamic> fechas = [];
   String? fechaSeleccionada;
+  // Global filter selection: 'turnos' (default) or 'urgencia'. This controls the
+  // value sent in the form body as 'filtro'. Kept separate from `tipoSeleccionado`
+  // which maps to icon/tipo metadata loaded from the server.
+  String filtroSeleccionado = 'turnos';
   List<dynamic> regiones = [];
   String? regionSeleccionada;
   List<dynamic> comunas = [];
@@ -329,7 +335,7 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       if (currentPosition == null) {
         await _ensureLocation();
       }
-    final tipo = tipoSeleccionado != null ? tipos[tipoSeleccionado!]['id'] : '';
+        final tipo = (filtroSeleccionado == 'turnos' ? 'turnos' : (tipoSeleccionado != null ? tipos[tipoSeleccionado!]['id'] : ''));
     // Build body map similar to web: func=region, filtro, fecha (if turnos), region, hora
     final hora = _horaActual();
 
@@ -438,12 +444,17 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
         }
 
     // For each local request detailed info (func=local) in parallel
-  final futures = farmaciasList.map<Future<Map<String, dynamic>>>((local) => _fetchLocalDetail(local));
+    final futures = farmaciasList.map<Future<Map<String, dynamic>>>((local) => _fetchLocalDetail(local));
     final detailed = await Future.wait(futures);
+
+    // Apply global filtroSeleccionado (if any) using the `tp` code from each
+    // local's `f` object when available: '1' -> turno, '3' -> urgencia.
+    // Note: tp is used for pill display only, NOT for filtering pharmacies
+    List<dynamic> detailedAfterFiltro = detailed;
 
     // Ensure final displayed list is ordered by distance to the user when possible.
       // If a comuna is selected, filter the detailed results by that comuna using the detailed 'f' object
-      final filteredDetailed = detailed.where((d) {
+  final filteredDetailed = detailedAfterFiltro.where((d) {
         try {
           final f = d['f'] ?? d['raw'] ?? d;
           final targetComunaId = comunaSeleccionada?.toString() ?? '';
@@ -471,24 +482,51 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       }).toList();
 
       // Use filteredDetailed instead of detailed
-      if (currentPosition != null && filteredDetailed.isNotEmpty) {
-      final mapped = filteredDetailed.map((d) => d['f'] ?? d['raw'] ?? d).toList();
-      final sorted = sortByProximity(mapped, currentPosition!.latitude, currentPosition!.longitude);
-      setState(() {
-        farmacias = sorted;
-        cargando = false;
-      });
-    } else {
-      setState(() {
-        farmacias = [];
-        cargando = false;
-      });
-    }
+      // Keep the complete structure needed by PharmacyCard: { 'f': mergedF, 'horario': horario, 'raw': raw }
+      // Merge raw + detailed `f` so we don't lose fields present only in the
+      // initial `raw` item when the detail response omits them. Detailed `f`
+      // should override raw values when present.
+      final mapped = filteredDetailed.map((d) {
+        final raw = (d['raw'] is Map) ? Map<String, dynamic>.from(d['raw']) : <String, dynamic>{};
+        final fdet = (d['f'] is Map) ? Map<String, dynamic>.from(d['f']) : <String, dynamic>{};
+        final horario = (d['horario'] is Map) ? Map<String, dynamic>.from(d['horario']) : <String, dynamic>{};
+        final mergedF = <String, dynamic>{}..addAll(raw)..addAll(fdet);
+        return {
+          'f': mergedF,
+          'horario': horario,
+          'raw': raw,
+        };
+      }).toList();
 
-    setState(() {
-      farmacias = detailed;
-      cargando = false;
-    });
+      if (mapped.isNotEmpty) {
+        // If a comuna is selected, show only those entries that match the comuna.
+        // Do NOT sort by proximity in that case — the requirement is to list only
+        // the farmacias that belong to the selected comuna, not the nearest ones.
+        if (comunaSeleccionada != null && comunaSeleccionada!.isNotEmpty) {
+          setState(() {
+            farmacias = mapped;
+            cargando = false;
+          });
+        } else if (currentPosition != null) {
+          // No comuna selected: keep the previous behaviour of sorting by proximity
+          final sorted = sortByProximity(mapped, currentPosition!.latitude, currentPosition!.longitude);
+          setState(() {
+            farmacias = sorted;
+            cargando = false;
+          });
+        } else {
+          // No position available: just present the mapped list
+          setState(() {
+            farmacias = mapped;
+            cargando = false;
+          });
+        }
+      } else {
+        setState(() {
+          farmacias = [];
+          cargando = false;
+        });
+      }
   } catch (e) {
     setState(() {
       error = e.toString();
@@ -651,7 +689,8 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       }
       // ensure func and fecha when applicable
       body['func'] = 'local';
-      if (tipoSeleccionado != null && tipos.length > tipoSeleccionado! && tipos[tipoSeleccionado!]['id'] == 'turnos' && fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty) {
+      // Use the global filtro selection to decide whether to include fecha for local details.
+      if (filtroSeleccionado == 'turnos' && fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty) {
         body['fecha'] = fechaSeleccionada!;
       }
       // include lat/lng if present (map.js sends the whole lc object but im is enough for server)
@@ -676,8 +715,7 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
     // tipo and region and comuna are required; if tipo == 'turnos' also require fecha
     if (tipoSeleccionado == null) return false;
     if (regionSeleccionada == null || comunaSeleccionada == null) return false;
-    final tipoId = tipos.length > (tipoSeleccionado ?? -1) && tipoSeleccionado != null ? tipos[tipoSeleccionado!]['id'] : '';
-    if (tipoId == 'turnos' && (fechaSeleccionada == null || fechaSeleccionada!.isEmpty)) return false;
+  if (filtroSeleccionado == 'turnos' && (fechaSeleccionada == null || fechaSeleccionada!.isEmpty)) return false;
     return true;
   }
 
@@ -685,6 +723,36 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
     if (_inputsSuficientes() && !cargando) {
       _buscarFarmacias();
     }
+  }
+
+  // Pill derivation moved to `lib/utils/pill.dart` to make it testable.
+
+  // Build a styled filter button that visually matches the PharmacyCard's
+  // ElevatedButton.icon used for the "¿Cómo llegar?" action. The selected
+  // button appears filled; the unselected one is outlined.
+  Widget _buildFilterButton(String id, IconData icon, String label) {
+    final selected = filtroSeleccionado == id;
+    return Builder(builder: (context) {
+      final onPressed = () {
+        setState(() {
+          filtroSeleccionado = id;
+          // Clear dependent filters when switching
+          fechaSeleccionada = null;
+          regionSeleccionada = null;
+          comunaSeleccionada = null;
+          comunas = [];
+          farmacias = [];
+          error = null;
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) => _maybeBuscar());
+      };
+
+      const pad = EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0);
+      if (selected) {
+        return ElevatedButton.icon(onPressed: onPressed, icon: Icon(icon, size: 18), label: Text(label), style: ElevatedButton.styleFrom(padding: pad));
+      }
+      return OutlinedButton.icon(onPressed: onPressed, icon: Icon(icon, size: 18), label: Text(label), style: OutlinedButton.styleFrom(padding: pad));
+    });
   }
 
   // Public wrapper for tests to trigger filter loading when autoInit is false
@@ -801,16 +869,34 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
 
   Future<void> _ensureLocation() async {
     try {
+      // Verificar si el servicio de ubicación está habilitado
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return;
+      if (!serviceEnabled) {
+        _showLocationServiceDisabledDialog();
+        return;
+      }
+      
+      // Verificar permisos actuales
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) return;
+        if (permission == LocationPermission.denied) {
+          _showLocationPermissionDeniedDialog();
+          return;
+        }
       }
-      if (permission == LocationPermission.deniedForever) return;
-  currentPosition = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.best));
-      // If we already have farmacias loaded, reorder them nearest->farthest now that we have a position
+      
+      if (permission == LocationPermission.deniedForever) {
+        _showLocationPermissionDeniedForeverDialog();
+        return;
+      }
+      
+      // Obtener la posición actual
+      currentPosition = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.best)
+      );
+      
+      // Si ya tenemos farmacias cargadas, reordenarlas por proximidad
       if (currentPosition != null && farmacias.isNotEmpty) {
         try {
           // farmacias list contains 'f' wrapped entries from _fetchLocalDetail; map to f and reorder
@@ -842,6 +928,90 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       AppLogger.d('_ensureLocation top-level failed', e, st);
       currentPosition = null;
     }
+  }
+
+  void _showLocationServiceDisabledDialog() {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Servicio de ubicación deshabilitado'),
+          content: const Text(
+            'Para mostrar las farmacias más cercanas, por favor habilita el servicio de ubicación en la configuración de tu dispositivo.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Entendido'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Geolocator.openLocationSettings();
+              },
+              child: const Text('Ir a configuración'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showLocationPermissionDeniedDialog() {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Permiso de ubicación denegado'),
+          content: const Text(
+            'Para encontrar las farmacias más cercanas, necesitamos acceso a tu ubicación. Puedes intentar otorgar el permiso nuevamente.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _ensureLocation();
+              },
+              child: const Text('Intentar nuevamente'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showLocationPermissionDeniedForeverDialog() {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Permiso de ubicación permanentemente denegado'),
+          content: const Text(
+            'Para usar la función de farmacias cercanas, necesitas habilitar los permisos de ubicación en la configuración de la aplicación.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Geolocator.openAppSettings();
+              },
+              child: const Text('Ir a configuración'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _openMaps(String direccion, String comuna, String region, {double? lat, double? lng}) async {
@@ -914,15 +1084,32 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-  appBar: AppBar(title: const Text('NearPharma'), centerTitle: true),
-      body: cargando
-          ? const Center(child: CircularProgressIndicator())
-          : error != null
-              ? Center(child: Text(error!))
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                    // App is always filtered to Turno; user selects fecha, región y comuna
+      body: Stack(
+        children: [
+          // Contenido principal con padding superior para evitar superposición
+          Padding(
+            padding: const EdgeInsets.only(top: 80.0), // Aumentado de 60 a 80 para más espacio
+            child: cargando
+                ? const Center(child: CircularProgressIndicator())
+                : error != null
+                    ? Center(child: Text(error!))
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    // Global filter toggle: Turno (default) or Urgencia. This controls
+                    // the 'filtro' sent to the backend. Placed above the other filters.
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Row(children: [
+                        const Text('Farmacia:',style: TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(width: 12),
+                        Row(children: [
+                          _buildFilterButton('turnos', Icons.calendar_today, 'Turno'),
+                          const SizedBox(width: 8),
+                          _buildFilterButton('urgencia', Icons.local_hospital, 'Urgencia'),
+                        ]),
+                      ]),
+                    ),
                     Padding(
                       padding: const EdgeInsets.only(top: 16.0),
                       child: fechas.isEmpty
@@ -994,157 +1181,18 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
                           itemBuilder: (context, idx) {
                             final item = farmacias[idx];
                             // item shape: { 'f': localResp, 'horario': {...}, 'raw': original }
-                            final f = item['f'] ?? item['raw'] ?? item;
-                            final horario = item['horario'] ?? {};
-                            String nombre = f['nm'] ?? '';
-                            String direccion = f['dr'] ?? '';
-                            // Title-case similar to ucwords
-                            String ucwords(String s) => s.split(RegExp(r'\s+')).map((p) => p.isEmpty ? p : (p[0].toUpperCase() + (p.length>1? p.substring(1):''))).join(' ');
-                            nombre = ucwords(nombre);
-                            direccion = ucwords(direccion);
-                            final comunaId = f['cm']?.toString() ?? '';
-                            final regionId = f['rg']?.toString() ?? '';
-                            final comunaNombre = comunasMap[comunaId] ?? comunaId;
-                            final regionNombre = regionesMap[regionId] ?? regionId;
-                            final telefono = f['tl'] ?? '';
-                            final horarioDia = horario['dia'] != null ? _stripHtml(horario['dia'].toString()) : '';
-                            final imgPath = f['img'];
-              final logo = (imgPath != null && imgPath.toString().isNotEmpty)
-                ? 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/mapa.php?imagen=$imgPath'
-                : 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/img/logo.svg';
-                            // tipo/titulo: local.tp is index to iconos/titulos arrays
-                            String tipoNombre = '';
-                            String pillText = '';
-                            // Determine if the currently selected global tipo is 'turnos'
-                            final bool globalTurno = (tipoSeleccionado != null && tipos.length > tipoSeleccionado! && tipos[tipoSeleccionado!]['id'] == 'turnos');
-                            try {
-                              // Normalize tp value: can be an index (int) or an icon id/name string
-                              final tpRaw = f['tp']?.toString();
-                              int? tpIdx;
-                              String tipoIcon = '';
-                              if (tpRaw != null) {
-                                // try parse as int index
-                                final parsed = int.tryParse(tpRaw);
-                                if (parsed != null) tpIdx = parsed;
-                                // If parsed index is valid, use arrays by index
-                                if (tpIdx != null && tpIdx >= 0 && tpIdx < titulosTipos.length) {
-                                  tipoNombre = titulosTipos[tpIdx];
-                                }
-                                if (tpIdx != null && tpIdx >= 0 && tpIdx < iconosTipos.length) {
-                                  tipoIcon = iconosTipos[tpIdx];
-                                }
-                                // If not an index or arrays didn't match, maybe tpRaw is the icon id itself
-                                if (tipoIcon.isEmpty && iconosTipos.contains(tpRaw)) {
-                                  tipoIcon = tpRaw;
-                                  final idxFromIcon = iconosTipos.indexOf(tpRaw);
-                                  if (idxFromIcon >= 0 && idxFromIcon < titulosTipos.length) tipoNombre = titulosTipos[idxFromIcon];
-                                }
-                                // As a last resort, try matching against `tipos` entries by id
-                                if (tipoNombre.isEmpty && tipos.isNotEmpty) {
-                                  try {
-                                    final match = tipos.firstWhere((t) => t['id']?.toString() == tpRaw, orElse: () => null);
-                                    if (match != null) tipoNombre = match['nombre']?.toString() ?? '';
-                                  } catch (_) {}
-                                }
-                              }
-                              // If the app-wide selected tipo is 'turnos', show exactly 'Turno' for all results
-                              final isTurno = tipoIcon == 'turnos' || tipoNombre.toLowerCase().contains('turno');
-                              if (globalTurno) {
-                                pillText = 'Turno';
-                                // prefer the turnos icon when available
-                                if (iconosTipos.contains('turnos')) tipoIcon = 'turnos';
-                              } else if (isTurno) {
-                                final lower = tipoNombre.toLowerCase();
-                                if (lower.contains('turno')) {
-                                  pillText = tipoNombre;
-                                } else if (tipoNombre.isNotEmpty) {
-                                  pillText = 'Turno - $tipoNombre';
-                                } else {
-                                  pillText = 'Turno';
-                                }
-                              } else {
-                                pillText = tipoNombre;
-                              }
-                            } catch (_) {
-                              pillText = tipoNombre;
-                            }
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 16),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16.0),
-                                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)), if (horarioDia.isNotEmpty) Text(horarioDia, style: const TextStyle(fontSize: 12, color: Colors.black54))])), widget.disableNetworkImages ? const SizedBox(width:48,height:48) : AdaptiveNetworkImage(url: logo, width: 48, height: 48, fit: BoxFit.contain, disableNetworkImages: widget.disableNetworkImages)]),
-                                  const SizedBox(height: 8),
-                                  if ((horario['turno'] ?? '').toString().isNotEmpty) ...[
-                                    const Divider(),
-                                    Text('Fecha Turno', style: const TextStyle(fontWeight: FontWeight.w600)),
-                                    Text(_stripHtml(horario['turno']?.toString()),),
-                                    const SizedBox(height: 8),
-                                    const Text('Horario Semanal', style: TextStyle(fontWeight: FontWeight.w600)),
-                                    Text(_stripHtml(horario['semana']?.toString() ?? 'No disponible')),
-                                  ] else ...[
-                                    const Text('Horario Semanal', style: TextStyle(fontWeight: FontWeight.w600)),
-                                    Text(_stripHtml(horario['semana']?.toString() ?? 'No disponible')),
-                                  ],
-                                  const SizedBox(height: 8),
-                                  Text('Dirección: $direccion'),
-                                  Text('$comunaNombre, $regionNombre'),
-                                  if (telefono.isNotEmpty) Text('Teléfono: $telefono'),
-                                  // 'Atención' badge removed per user request
-                                  const SizedBox(height: 8),
-                                  ElevatedButton.icon(onPressed: () async {
-                                    double? lat;
-                                    double? lng;
-                                    try {
-                                      lat = _safeParseDouble((f['lt'] ?? f['lat'] ?? '').toString());
-                                      lng = _safeParseDouble((f['lg'] ?? f['lng'] ?? '').toString());
-                                    } catch (e, st) {
-                                      AppLogger.d('safe parse lat/lng failed', e, st);
-                                      lat = null; lng = null;
-                                    }
-                                    await _openMaps(direccion, comunaNombre, regionNombre, lat: lat, lng: lng);
-                                  }, icon: const Icon(Icons.map), label: const Text('¿Cómo llegar?')),
-                                  const SizedBox(height: 8),
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: Builder(builder: (ctx) {
-                                      Widget ic = const SizedBox.shrink();
-                                      String labelText = pillText;
-                                      try {
-                                        // Determine icon to show: prefer the local tp index, but if globalTurno is true prefer 'turnos'
-                                        String iconToUse = '';
-                                        if (globalTurno && iconosTipos.contains('turnos')) {
-                                          iconToUse = 'turnos';
-                                        } else {
-                                          final tpIdx = int.tryParse((f['tp'] ?? f['tp']?.toString() ?? '-1').toString()) ?? -1;
-                                          if (tpIdx >= 0 && tpIdx < iconosTipos.length) {
-                                            iconToUse = iconosTipos[tpIdx];
-                                          }
-                                        }
-                                        if (iconToUse.isNotEmpty) {
-                                          final iconUrl = 'https://seremienlinea.minsal.cl/asdigital/mfarmacias/img/i${iconToUse}b.png';
-                                          if (widget.disableNetworkImages) {
-                                            ic = const SizedBox.shrink();
-                                          } else {
-                                            ic = AdaptiveNetworkImage(url: iconUrl, width: 15, height: 15, fit: BoxFit.contain, disableNetworkImages: widget.disableNetworkImages);
-                                          }
-                                          if (iconToUse == 'turnos') labelText = 'Turno';
-                                        }
-                                      } catch (_) {}
-                                      return Container(
-                                        width: 90,
-                                        padding: const EdgeInsets.fromLTRB(8, 5, 2, 0),
-                                        decoration: BoxDecoration(color: Colors.green.shade600, borderRadius: BorderRadius.circular(4)),
-                                        child: Row(children: [
-                                          SizedBox(width: 18, child: ic),
-                                          const SizedBox(width: 6),
-                                          Expanded(child: Center(child: Text(labelText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600), textAlign: TextAlign.center))),
-                                        ]),
-                                      );
-                                    }),
-                                  ),
-                                ]),
-                              ),
+                            final raw = (item['raw'] ?? <String, dynamic>{}) as Map<String, dynamic>;
+                            final f = (item['f'] ?? <String, dynamic>{}) as Map<String, dynamic>;
+                            final mergedF = <String, dynamic>{}..addAll(raw)..addAll(f);
+                            final horario = (item['horario'] ?? <String, dynamic>{}) as Map<String, dynamic>;
+                            return PharmacyCard(
+                              f: mergedF,
+                              horario: horario,
+                              comunasMap: comunasMap,
+                              regionesMap: regionesMap,
+                              titulosTipos: titulosTipos,
+                              iconosTipos: iconosTipos,
+                              disableNetworkImages: widget.disableNetworkImages,
                             );
                           },
                         ),
@@ -1162,6 +1210,25 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
                     ),
                   ]),
                 ),
+          ),
+          // Título posicionado en la esquina superior izquierda
+          Positioned(
+            top: 45.0, // Movido un poco más abajo
+            left: 16.0,
+            child: Container(
+              padding: const EdgeInsets.only(bottom: 8.0), // Padding inferior para separación visual
+              child: Text(
+                'NearPharma',
+                style: TextStyle(
+                  fontSize: 20.0,
+                  fontWeight: FontWeight.w500,
+                  color: Theme.of(context).primaryColor,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
