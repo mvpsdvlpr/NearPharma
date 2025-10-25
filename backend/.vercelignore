@@ -13,6 +13,7 @@ src/
 tsconfig.json
 jest.config.js
 README*.md
+../mobile/
 
 # Keep only the built output
 !dist/
