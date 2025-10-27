@@ -42,7 +42,7 @@ jobs:
 
       - name: Upload generated Android icons
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: android-icons
           path: |
@@ -50,7 +50,7 @@ jobs:
 
       - name: Upload generated iOS icons
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ios-app-icons
           path: |
