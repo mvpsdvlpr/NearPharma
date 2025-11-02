@@ -34,36 +34,24 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            val keystorePropertiesFile = rootProject.file("key.properties")
+            if (keystorePropertiesFile.exists()) {
+                val keystoreProperties = Properties()
+                keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+                
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // Use release signing config if available. Keep debug signing only for local testing.
-                // Read signing properties from key.properties (not checked into repo)
-                val keyPropsFile = rootProject.file("../key.properties")
-                if (keyPropsFile.exists()) {
-                    // Read key.properties using Kotlin file APIs (avoid java.util/java.io references in the script)
-                    val lines = keyPropsFile.readLines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
-                    val map = lines.mapNotNull {
-                        val parts = it.split("=", limit = 2)
-                        if (parts.size == 2) parts[0].trim() to parts[1].trim() else null
-                    }.toMap()
-                    val storeFilePath = map["storeFile"]
-                    if (!storeFilePath.isNullOrEmpty()) {
-                        signingConfigs {
-                            create("release") {
-                                storeFile = file(storeFilePath)
-                                storePassword = map["storePassword"]
-                                keyAlias = map["keyAlias"]
-                                keyPassword = map["keyPassword"]
-                            }
-                        }
-                        signingConfig = signingConfigs.getByName("release")
-                    } else {
-                        // fallback to debug signing when no key properties found (local dev)
-                        signingConfig = signingConfigs.getByName("debug")
-                    }
-                } else {
-                    signingConfig = signingConfigs.getByName("debug")
-                }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
-import '../src/logger.dart';
 import '../theme.dart';
 import '../utils/pill.dart';
 
@@ -48,8 +47,7 @@ class _AdaptiveNetworkImageState extends State<AdaptiveNetworkImage> {
 			if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
 				try {
 					return SvgPicture.memory(resp.bodyBytes, width: widget.width, height: widget.height, fit: widget.fit);
-				} catch (e, st) {
-					AppLogger.d('AdaptiveNetworkImage._fetchAndRenderSvg failed', e, st);
+				} catch (e) {
 					return Image.memory(
 						resp.bodyBytes,
 						width: widget.width,
@@ -59,8 +57,8 @@ class _AdaptiveNetworkImageState extends State<AdaptiveNetworkImage> {
 					);
 				}
 			}
-		} catch (e, st) {
-			AppLogger.d('AdaptiveNetworkImage._fetchAndRenderSvg failed', e, st);
+		} catch (e) {
+			// Failed to fetch SVG
 		} finally {
 			if (local != null) local.close();
 		}
@@ -105,8 +103,8 @@ class _AdaptiveNetworkImageState extends State<AdaptiveNetworkImage> {
 						setState(() => _type = 'svg');
 						return;
 					}
-				} catch (e, st) {
-					AppLogger.d('AdaptiveNetworkImage._detect: head/get failed', e, st);
+				} catch (e) {
+					// HEAD/GET failed
 				}
 			}
 			setState(() => _type = 'raster');
@@ -125,8 +123,8 @@ class _AdaptiveNetworkImageState extends State<AdaptiveNetworkImage> {
 			if (_bytes != null) {
 				try {
 					return SvgPicture.memory(_bytes!, width: widget.width, height: widget.height, fit: widget.fit);
-				} catch (e, st) {
-					AppLogger.d('AdaptiveNetworkImage build svg bytes failed', e, st);
+				} catch (e) {
+					// Failed to build SVG from bytes
 				}
 			}
 			return FutureBuilder<Widget>(
@@ -164,8 +162,7 @@ class AssetAdaptiveImage extends StatelessWidget {
 			try {
 				final b = await rootBundle.load(p);
 				return b.buffer.asUint8List();
-			} catch (e, st) {
-				AppLogger.d('AssetAdaptiveImage._resolveBytes: tryLoad alternative failed', e, st);
+			} catch (e) {
 				return null;
 			}
 		}
@@ -256,8 +253,7 @@ class AssetSafeImage extends StatelessWidget {
 			} catch (_) {
 				return const Icon(Icons.local_pharmacy, color: Colors.grey);
 			}
-		} catch (e, st) {
-			AppLogger.d('AssetSafeImage._loadWidget failed', e, st);
+		} catch (e) {
 			return const Icon(Icons.local_pharmacy, color: Colors.grey);
 		}
 	}
@@ -370,11 +366,9 @@ class PharmacyCard extends StatelessWidget {
 					mode: LaunchMode.externalApplication,
 				);
 				// If we get here, launch was successful
-				AppLogger.d('Successfully opened maps with: $uriString');
 				return;
 			} catch (e) {
 				// Continue to next option
-				AppLogger.d('Failed to open maps with $uriString: $e');
 				continue;
 			}
 		}

@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'api_client.dart';
-import 'src/logger.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:math';
 import 'dart:async';
@@ -25,8 +24,8 @@ void main() async {
       MyApp.packageBuild = info.buildNumber;
       MyApp.appVersion = '${info.version}+${info.buildNumber}';
     }
-  } catch (e, st) {
-    AppLogger.d('PackageInfo.fromPlatform failed, using compile-time fallback', e, st);
+  } catch (e) {
+    // Using compile-time fallback version
   }
   runApp(const MyApp());
 }
@@ -160,18 +159,11 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       final resp = await _postForm({'func': 'iconos'});
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
-        // V2 response: [{"id": "1", "name": "Turno", "icon": "turnos"}, ...]
-        // Direct array response (no 'respuesta' wrapper)
-        if (data is List) {
-          AppLogger.d('Iconos cargados correctamente: ${data.length} tipos');
-        } else {
-          AppLogger.d('Iconos response format inesperado');
-        }
+        // API MINSAL response: {"correcto":true,"titulos":[...],"respuesta":{...}}
       } else {
         throw Exception('Error iconos: ${resp.statusCode}');
       }
-    } catch (e, st) {
-      AppLogger.d('_loadIconos error', e, st);
+    } catch (e) {
       setState(() {
         error = e.toString();
       });
@@ -180,16 +172,14 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
 
   Future<void> _loadComunas(String regionId) async {
     try {
-      // POST /api/v2/regions/{regionId}/communes
       final resp = await _postForm({'func': 'comunas', 'region': regionId});
       List<dynamic> comunasList = [];
       
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
-        // V2 response: [{"id": "123", "nombre": "Santiago", ...}, ...]
-        // Direct array response (no 'respuesta' wrapper)
-        if (data is List) {
-          comunasList = data;
+        // API MINSAL response: {"correcto":true,"respuesta":[{"id":"123","nombre":"Santiago"},...]}
+        if (data is Map && data['correcto'] == true && data['respuesta'] is List) {
+          comunasList = data['respuesta'] as List;
         }
       } else {
         throw Exception('Error comunas: ${resp.statusCode}');
@@ -207,8 +197,7 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
         // Do not preselect a comuna; user must choose
         comunaSeleccionada = null;
       });
-    } catch (e, st) {
-      AppLogger.d('_loadComunas error', e, st);
+    } catch (e) {
       setState(() {
         error = e.toString();
       });
@@ -248,10 +237,18 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       if (resp.statusCode != 200) continue;
       try {
         final data = json.decode(resp.body);
-        // V2 response: Direct array [{"id": "...", "nombre": "...", ...}, ...]
-        // No 'respuesta' wrapper
-        if (data is List) {
-          final locals = List<dynamic>.from(data);
+        // API MINSAL response: {"correcto":true,"respuesta":{"locales":[{"id":"...","nombre":"..."},...]},"info":""}
+        if (data is Map && data['correcto'] == true) {
+          List<dynamic> locals = [];
+          // Check if respuesta contains locales array
+          if (data['respuesta'] is Map && data['respuesta']['locales'] is List) {
+            locals = List<dynamic>.from(data['respuesta']['locales']);
+          }
+          // Fallback: if respuesta is directly a list (for backward compatibility)
+          else if (data['respuesta'] is List) {
+            locals = List<dynamic>.from(data['respuesta']);
+          }
+          
           for (final l in locals) {
             try {
               final id = l['id']?.toString() ?? l['im']?.toString() ?? json.encode(l);
@@ -259,13 +256,13 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
                 seen.add(id);
                 farmaciasList.add(l);
               }
-            } catch (e, st) {
-              AppLogger.d('failed to extract id for local entry', e, st);
+            } catch (e) {
+              // Skip invalid entry
             }
           }
         }
-      } catch (e, st) {
-        AppLogger.d('failed to parse region response for locales', e, st);
+      } catch (e) {
+        // Failed to parse region response
       }
     }
 
@@ -277,19 +274,27 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
         final resp = await _postForm(b);
         if (resp.statusCode == 200) {
           final data = json.decode(resp.body);
-          // V2 response: Direct array
-          if (data is List) {
-            farmaciasList = List<dynamic>.from(data);
+          // API MINSAL response: {"correcto":true,"respuesta":{"locales":[...]},"info":""}
+          if (data is Map && data['correcto'] == true) {
+            if (data['respuesta'] is Map && data['respuesta']['locales'] is List) {
+              farmaciasList = List<dynamic>.from(data['respuesta']['locales']);
+            } else if (data['respuesta'] is List) {
+              farmaciasList = List<dynamic>.from(data['respuesta']);
+            }
           }
         }
-      } catch (e, st) {
-        AppLogger.d('fallback region request failed', e, st);
+      } catch (e) {
+        // Fallback region request failed
       }
 
       if (farmaciasList.isEmpty) {
         setState(() {
           farmacias = [];
           cargando = false;
+        });
+        // Mostrar diálogo informativo cuando no hay resultados
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showNoPharmaciesDialog();
         });
         return;
       }
@@ -311,7 +316,9 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
 
     // Ensure final displayed list is ordered by distance to the user when possible.
       // If a comuna is selected, filter the detailed results by that comuna using the detailed 'f' object
-  final filteredDetailed = detailedAfterFiltro.where((d) {
+  final filteredDetailed = (comunaSeleccionada == null || comunaSeleccionada!.isEmpty) 
+    ? detailedAfterFiltro 
+    : detailedAfterFiltro.where((d) {
         try {
           final f = d['f'] ?? d['raw'] ?? d;
           final targetComunaId = comunaSeleccionada?.toString() ?? '';
@@ -348,6 +355,15 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
         final fdet = (d['f'] is Map) ? Map<String, dynamic>.from(d['f']) : <String, dynamic>{};
         final horario = (d['horario'] is Map) ? Map<String, dynamic>.from(d['horario']) : <String, dynamic>{};
         final mergedF = <String, dynamic>{}..addAll(raw)..addAll(fdet);
+        
+        // Convert API field names: lt->lat, lg->lng for PharmacyCard compatibility
+        if (mergedF['lt'] != null && mergedF['lat'] == null) {
+          mergedF['lat'] = mergedF['lt'];
+        }
+        if (mergedF['lg'] != null && mergedF['lng'] == null) {
+          mergedF['lng'] = mergedF['lg'];
+        }
+        
         return {
           'f': mergedF,
           'horario': horario,
@@ -383,6 +399,10 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
           farmacias = [];
           cargando = false;
         });
+        // Mostrar diálogo informativo cuando el filtrado por comuna no arroja resultados
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showNoPharmaciesDialog();
+        });
       }
   } catch (e) {
     setState(() {
@@ -406,13 +426,12 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       final m = RegExp(r'-?\d+(?:\.\d+)?').firstMatch(cleaned);
       if (m == null) return null;
       return double.tryParse(m.group(0) ?? '');
-    } catch (e, st) {
-      AppLogger.d('safeParseDouble failed for input: $s', e, st);
+    } catch (e) {
       return null;
     }
   }
 
-  // Load regiones (similar to web func=regiones)
+  // Load regiones (conexión directa a API MINSAL)
   Future<void> _loadRegiones() async {
     setState(() {
       cargando = true;
@@ -422,17 +441,18 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
         List<dynamic> regionesList = [];
-        // V2 response: [{"id": "1", "nombre": "Tarapacá", ...}, ...]
-        // Direct array response (no 'respuesta' wrapper)
-        if (data is List) {
-          regionesList = data;
+        
+        // API MINSAL response: {"correcto":true,"respuesta":[{"id":"1","nombre":"Tarapacá"},...]}
+        if (data is Map && data['correcto'] == true && data['respuesta'] is List) {
+          regionesList = data['respuesta'] as List;
         }
+        
         final map = <String, String>{};
         for (final r in regionesList) {
           try {
             map[r['id'].toString()] = r['nombre'].toString();
-          } catch (e, st) {
-            AppLogger.d('failed to compute id in sorted mapping', e, st);
+          } catch (e) {
+            // Skip invalid entry
           }
         }
         setState(() {
@@ -442,8 +462,7 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       } else {
         throw Exception('Error regiones: ${resp.statusCode}');
       }
-    } catch (e, st) {
-      AppLogger.d('_loadRegiones error', e, st);
+    } catch (e) {
       setState(() {
         error = e.toString();
       });
@@ -464,11 +483,11 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
         List<dynamic> out = [];
-        // V2 response: {"2025-11-01": "Sábado 01 de Noviembre", ...}
-        // Direct object response (no 'respuesta' wrapper)
-        if (data is Map) {
-          // Convertir mapa de fechas a lista
-          data.forEach((k, v) {
+        
+        // API MINSAL response: {"correcto":true,"respuesta":{"2025-11-01":"Sábado 01 de Noviembre",...}}
+        if (data is Map && data['correcto'] == true && data['respuesta'] is Map) {
+          final fechasMap = data['respuesta'] as Map;
+          fechasMap.forEach((k, v) {
             try {
               out.add({'id': k.toString(), 'label': v.toString()});
             } catch (_) {}
@@ -480,8 +499,7 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       } else {
         throw Exception('Error fechas: ${resp.statusCode}');
       }
-    } catch (e, st) {
-      AppLogger.d('_loadFechas error', e, st);
+    } catch (e) {
       setState(() {
         error = e.toString();
       });
@@ -580,24 +598,32 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       
       final resp = await _postForm(body);
       if (resp.statusCode == 200) {
-        debugPrint('DEBUG local($pharmacyId) response: ${resp.body}');
         final data = json.decode(resp.body);
         
-        // V2 response format: Direct object or array
-        // Check if it's a single pharmacy object
-        if (data is Map) {
-          // Single pharmacy detail returned
-          final horario = data['horario'] ?? data['schedule'] ?? {};
-          return {'f': data, 'horario': horario, 'raw': local};
-        } else if (data is List && data.isNotEmpty) {
-          // Array returned, take first item
-          final item = data.first;
-          final horario = item['horario'] ?? item['schedule'] ?? {};
-          return {'f': item, 'horario': horario, 'raw': local};
+        // API MINSAL response: {"correcto":true,"respuesta":{"local":{...},"horario":{...}},"info":""}
+        if (data is Map && data['correcto'] == true) {
+          final respuesta = data['respuesta'];
+          
+          if (respuesta is Map) {
+            // Check if response has 'local' and 'horario' fields (MINSAL format)
+            if (respuesta.containsKey('local') && respuesta.containsKey('horario')) {
+              final localData = respuesta['local'] ?? {};
+              final horario = respuesta['horario'] ?? {};
+              return {'f': localData, 'horario': horario, 'raw': local};
+            }
+            // Fallback: Single pharmacy detail returned directly
+            final horario = respuesta['horario'] ?? respuesta['schedule'] ?? {};
+            return {'f': respuesta, 'horario': horario, 'raw': local};
+          } else if (respuesta is List && respuesta.isNotEmpty) {
+            // Array returned, take first item
+            final item = respuesta.first;
+            final horario = item['horario'] ?? item['schedule'] ?? {};
+            return {'f': item, 'horario': horario, 'raw': local};
+          }
         }
       }
-    } catch (e, st) {
-      AppLogger.d('_fetchLocalDetail error', e, st);
+    } catch (e) {
+      // Error fetching local detail
     }
     // fallback: return original local without detalle
     return {'f': local, 'horario': {}, 'raw': local};
@@ -734,12 +760,11 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
               return ai.compareTo(bi);
             });
           });
-        } catch (e, st) {
-          AppLogger.d('_ensureLocation: reordering mapping failed', e, st);
+        } catch (e) {
+          // Reordering failed
         }
       }
-    } catch (e, st) {
-      AppLogger.d('_ensureLocation top-level failed', e, st);
+    } catch (e) {
       currentPosition = null;
     }
   }
@@ -821,6 +846,68 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
                 Geolocator.openAppSettings();
               },
               child: const Text('Ir a configuración'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showNoPharmaciesDialog() {
+    if (!mounted) return;
+    
+    String mensaje = 'No se encontraron farmacias de turno';
+    
+    // Personalizar mensaje según filtros aplicados
+    if (comunaSeleccionada != null && comunaSeleccionada!.isNotEmpty) {
+      final comunaNombre = comunasMap[comunaSeleccionada] ?? 'la comuna seleccionada';
+      mensaje = 'No se encontraron farmacias de turno en $comunaNombre';
+      
+      if (fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty && fechaSeleccionada != '0') {
+        final fechaItem = fechas.firstWhere(
+          (f) => f['id'] == fechaSeleccionada, 
+          orElse: () => {'label': ''}
+        );
+        if (fechaItem['label'] != null && fechaItem['label'].toString().isNotEmpty) {
+          mensaje += ' para la fecha seleccionada';
+        }
+      }
+    } else if (regionSeleccionada != null && regionSeleccionada!.isNotEmpty) {
+      final regionNombre = regionesMap[regionSeleccionada] ?? 'la región seleccionada';
+      mensaje = 'No se encontraron farmacias de turno en $regionNombre';
+    }
+    
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.info_outline, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('Información'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(mensaje),
+              const SizedBox(height: 12),
+              const Text(
+                'Sugerencias:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              const Text('• Intenta seleccionar una comuna diferente'),
+              const Text('• Verifica la fecha de turno seleccionada'),
+              const Text('• Prueba con otra comuna cercana'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Entendido'),
             ),
           ],
         );
@@ -954,9 +1041,10 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
                         onChanged: (v) {
                           setState(() {
                             regionSeleccionada = v;
-                            // clear comuna selection when region changes
+                            // clear comuna selection and pharmacy list when region changes
                             comunas = [];
                             comunaSeleccionada = null;
+                            farmacias = [];
                           });
                           if (v != null) _loadComunas(v);
                           WidgetsBinding.instance.addPostFrameCallback((_) => _maybeBuscar());
@@ -970,7 +1058,14 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
                         isExpanded: true,
                         initialValue: comunaSeleccionada,
                         items: comunas.map<DropdownMenuItem<String>>((c) => DropdownMenuItem(value: c['id'].toString(), child: Text(c['nombre']))).toList(),
-                        onChanged: (v) { setState(() { comunaSeleccionada = v; }); WidgetsBinding.instance.addPostFrameCallback((_) => _maybeBuscar()); },
+                        onChanged: (v) { 
+                          setState(() { 
+                            comunaSeleccionada = v;
+                            // clear pharmacy list when comuna changes
+                            farmacias = [];
+                          }); 
+                          WidgetsBinding.instance.addPostFrameCallback((_) => _maybeBuscar()); 
+                        },
                         decoration: const InputDecoration(labelText: 'Comuna'),
                       ),
                     ),
