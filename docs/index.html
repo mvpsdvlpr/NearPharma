@@ -3,230 +3,607 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Política de Privacidad - NearPharma</title>
+    <meta name="description" content="NearPharma - Encuentra farmacias de turno cerca de ti en Chile. Información actualizada del MINSAL.">
+    <meta name="keywords" content="farmacias, turno, urgencia, Chile, MINSAL, farmacias cercanas">
+    <title>NearPharma - Encuentra Farmacias de Turno en Chile</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             line-height: 1.6;
             color: #333;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
             background-color: #f5f5f5;
         }
-        .container {
-            background-color: white;
-            padding: 40px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+
+        /* Header */
+        header {
+            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+            color: white;
+            padding: 20px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
-        h1 {
-            color: #2196F3;
-            border-bottom: 3px solid #4CAF50;
-            padding-bottom: 10px;
+
+        nav {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
-        h2 {
-            color: #2196F3;
-            margin-top: 30px;
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 24px;
+            font-weight: bold;
         }
-        h3 {
-            color: #4CAF50;
+
+        .logo img {
+            width: 50px;
+            height: 50px;
+            border-radius: 10px;
         }
-        .update-date {
-            color: #666;
-            font-style: italic;
+
+        nav ul {
+            list-style: none;
+            display: flex;
+            gap: 30px;
+        }
+
+        nav a {
+            color: white;
+            text-decoration: none;
+            transition: opacity 0.3s;
+            font-weight: 500;
+        }
+
+        nav a:hover {
+            opacity: 0.8;
+        }
+
+        /* Hero Section */
+        .hero {
+            background: linear-gradient(135deg, #2196F3 0%, #4CAF50 100%);
+            color: white;
+            padding: 80px 20px;
+            text-align: center;
+        }
+
+        .hero-content {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .hero h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            animation: fadeInUp 0.8s;
+        }
+
+        .hero p {
+            font-size: 20px;
             margin-bottom: 30px;
+            opacity: 0.95;
+            animation: fadeInUp 1s;
         }
-        .summary {
-            background-color: #E3F2FD;
-            padding: 20px;
-            border-radius: 8px;
-            border-left: 4px solid #2196F3;
-            margin: 30px 0;
+
+        .hero-buttons {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+            animation: fadeInUp 1.2s;
         }
-        .summary h2 {
-            margin-top: 0;
-            color: #1976D2;
+
+        .btn {
+            padding: 15px 40px;
+            border-radius: 30px;
+            text-decoration: none;
+            font-weight: bold;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
         }
-        .summary p {
-            margin: 10px 0;
+
+        .btn-primary {
+            background: white;
+            color: #2196F3;
         }
-        .summary strong {
-            color: #1976D2;
+
+        .btn-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
         }
-        ul {
-            padding-left: 20px;
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 2px solid white;
         }
-        li {
-            margin: 8px 0;
+
+        .btn-secondary:hover {
+            background: white;
+            color: #2196F3;
         }
-        .highlight {
-            background-color: #FFF9C4;
-            padding: 2px 6px;
-            border-radius: 3px;
+
+        /* Container */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
         }
+
+        /* Features Section */
+        .features {
+            padding: 80px 20px;
+            background: white;
+        }
+
+        .section-title {
+            text-align: center;
+            font-size: 36px;
+            margin-bottom: 50px;
+            color: #2196F3;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 40px;
+            margin-top: 40px;
+        }
+
+        .feature-card {
+            text-align: center;
+            padding: 30px;
+            border-radius: 10px;
+            background: #f8f9fa;
+            transition: transform 0.3s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .feature-icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+
+        .feature-card h3 {
+            color: #2196F3;
+            margin-bottom: 15px;
+            font-size: 22px;
+        }
+
+        .feature-card p {
+            color: #666;
+            line-height: 1.8;
+        }
+
+        /* Screenshots Section */
+        .screenshots {
+            padding: 80px 20px;
+            background: #f5f5f5;
+        }
+
+        .screenshots-slider {
+            display: flex;
+            gap: 20px;
+            overflow-x: auto;
+            padding: 20px 0;
+            scroll-snap-type: x mandatory;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .screenshots-slider::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        .screenshots-slider::-webkit-scrollbar-track {
+            background: #e0e0e0;
+            border-radius: 10px;
+        }
+
+        .screenshots-slider::-webkit-scrollbar-thumb {
+            background: #2196F3;
+            border-radius: 10px;
+        }
+
+        .screenshot-item {
+            flex: 0 0 auto;
+            scroll-snap-align: center;
+        }
+
+        .screenshot-item img {
+            height: 500px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s;
+        }
+
+        .screenshot-item img:hover {
+            transform: scale(1.05);
+        }
+
+        /* Contact Section */
         .contact {
-            background-color: #F5F5F5;
-            padding: 20px;
-            border-radius: 8px;
-            margin-top: 30px;
+            padding: 80px 20px;
+            background: white;
         }
-        @media (max-width: 600px) {
-            body {
-                padding: 10px;
+
+        .contact-content {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .contact-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group label {
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #555;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #2196F3;
+        }
+
+        .form-group textarea {
+            min-height: 150px;
+            resize: vertical;
+        }
+
+        .submit-btn {
+            background: linear-gradient(135deg, #2196F3 0%, #4CAF50 100%);
+            color: white;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.3s;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 20px rgba(33, 150, 243, 0.3);
+        }
+
+        .contact-info {
+            margin-top: 40px;
+            text-align: center;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .contact-info h3 {
+            color: #2196F3;
+            margin-bottom: 20px;
+        }
+
+        .contact-info p {
+            margin: 10px 0;
+            color: #666;
+        }
+
+        .contact-info a {
+            color: #2196F3;
+            text-decoration: none;
+        }
+
+        .contact-info a:hover {
+            text-decoration: underline;
+        }
+
+        /* Footer */
+        footer {
+            background: #1976D2;
+            color: white;
+            padding: 40px 20px;
+            text-align: center;
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .footer-links a {
+            color: white;
+            text-decoration: none;
+        }
+
+        .footer-links a:hover {
+            text-decoration: underline;
+        }
+
+        /* Animations */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
             }
-            .container {
-                padding: 20px;
+            to {
+                opacity: 1;
+                transform: translateY(0);
             }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 32px;
+            }
+
+            .hero p {
+                font-size: 18px;
+            }
+
+            nav ul {
+                display: none;
+            }
+
+            .screenshot-item img {
+                height: 400px;
+            }
+
+            .section-title {
+                font-size: 28px;
+            }
+        }
+
+        /* Success Message */
+        .success-message {
+            display: none;
+            padding: 15px;
+            background: #4CAF50;
+            color: white;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .success-message.show {
+            display: block;
+            animation: fadeInUp 0.5s;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Política de Privacidad de NearPharma</h1>
-        <p class="update-date"><strong>Última actualización:</strong> 2 de noviembre de 2025</p>
-
-        <div class="summary">
-            <h2>Resumen en Lenguaje Simple</h2>
-            <p><strong>¿Qué datos recopila NearPharma?</strong><br>
-            Solo su ubicación GPS, y únicamente si usted lo permite.</p>
-            
-            <p><strong>¿Para qué usa mi ubicación?</strong><br>
-            Para mostrarle las farmacias más cercanas.</p>
-            
-            <p><strong>¿Guarda mi información personal?</strong><br>
-            No. No guardamos datos personales en ningún servidor.</p>
-            
-            <p><strong>¿Vende mis datos?</strong><br>
-            No. Nunca vendemos ni compartimos sus datos.</p>
-            
-            <p><strong>¿Puedo usar la app sin dar mi ubicación?</strong><br>
-            Sí. Puede buscar farmacias manualmente por región y comuna.</p>
-            
-            <p><strong>¿De dónde vienen los datos de farmacias?</strong><br>
-            Directamente del Ministerio de Salud de Chile (MINSAL).</p>
-        </div>
-
-        <h2>1. Introducción</h2>
-        <p>NearPharma ("nosotros", "nuestra" o "la aplicación") respeta su privacidad y se compromete a proteger sus datos personales. Esta política de privacidad le informará sobre cómo manejamos sus datos personales cuando utiliza nuestra aplicación móvil.</p>
-
-        <h2>2. Información que Recopilamos</h2>
-        
-        <h3>2.1 Ubicación del Dispositivo</h3>
-        <ul>
-            <li><strong>Tipo de dato:</strong> Ubicación geográfica aproximada (coordenadas GPS)</li>
-            <li><strong>Propósito:</strong> Para mostrar las farmacias más cercanas a su ubicación actual</li>
-            <li><strong>Base legal:</strong> Consentimiento del usuario (solicitado al usar la función de ubicación)</li>
-            <li><strong>Almacenamiento:</strong> Los datos de ubicación se procesan localmente en su dispositivo y no se almacenan en nuestros servidores</li>
-        </ul>
-
-        <h3>2.2 Datos que NO Recopilamos</h3>
-        <p>La aplicación NearPharma <span class="highlight"><strong>NO</strong></span> recopila, almacena ni comparte:</p>
-        <ul>
-            <li>Información personal identificable (nombre, correo electrónico, teléfono)</li>
-            <li>Historial de búsquedas</li>
-            <li>Datos de navegación</li>
-            <li>Información de contacto</li>
-            <li>Datos de salud o médicos</li>
-            <li>Información financiera o de pago</li>
-        </ul>
-
-        <h2>3. Cómo Utilizamos su Información</h2>
-        <p>La ubicación geográfica se utiliza exclusivamente para:</p>
-        <ul>
-            <li>Ordenar las farmacias por proximidad a su ubicación actual</li>
-            <li>Mejorar la experiencia de usuario mostrando resultados relevantes</li>
-            <li>Permitir la navegación hacia farmacias seleccionadas</li>
-        </ul>
-
-        <h2>4. Fuente de Datos de Farmacias</h2>
-        <p>Los datos de farmacias (nombres, direcciones, horarios, turnos) son obtenidos directamente de:</p>
-        <ul>
-            <li><strong>MINSAL</strong> (Ministerio de Salud de Chile)</li>
-            <li>API pública: <a href="https://seremienlinea.minsal.cl/asdigital/mfarmacias/" target="_blank">https://seremienlinea.minsal.cl/asdigital/mfarmacias/</a></li>
-        </ul>
-        <p>NearPharma actúa como intermediario para facilitar el acceso a esta información pública y no modifica ni almacena estos datos.</p>
-
-        <h2>5. Permisos de la Aplicación</h2>
-        
-        <h3>5.1 Permiso de Ubicación</h3>
-        <ul>
-            <li><strong>Propósito:</strong> Determinar su posición actual para mostrar farmacias cercanas</li>
-            <li><strong>Opcional:</strong> Puede usar la aplicación sin otorgar este permiso; en tal caso, deberá buscar farmacias manualmente por región y comuna</li>
-            <li><strong>Revocación:</strong> Puede revocar este permiso en cualquier momento desde la configuración de su dispositivo</li>
-        </ul>
-
-        <h3>5.2 Acceso a Internet</h3>
-        <ul>
-            <li><strong>Propósito:</strong> Consultar la información actualizada de farmacias desde la API de MINSAL</li>
-            <li><strong>Necesario:</strong> Este permiso es esencial para el funcionamiento de la aplicación</li>
-        </ul>
-
-        <h2>6. Almacenamiento y Seguridad de Datos</h2>
-        <ul>
-            <li><strong>Almacenamiento local:</strong> Solo se almacenan temporalmente en su dispositivo los datos necesarios para el funcionamiento de la aplicación (cache de búsquedas recientes)</li>
-            <li><strong>Sin servidores propios:</strong> NearPharma no opera servidores que almacenen sus datos personales</li>
-            <li><strong>Sin registro de usuario:</strong> No requiere crear cuenta ni proporcionar información personal</li>
-        </ul>
-
-        <h2>7. Compartir Datos con Terceros</h2>
-        
-        <h3>7.1 Servicios de Terceros Utilizados</h3>
-        <p><strong>API de MINSAL</strong></p>
-        <ul>
-            <li>Las consultas de farmacias se realizan directamente a la API pública de MINSAL</li>
-            <li>MINSAL puede tener su propia política de privacidad para el uso de su API</li>
-        </ul>
-
-        <p><strong>Google Maps / Mapas del dispositivo</strong></p>
-        <ul>
-            <li>Al usar la función "Cómo llegar", se abrirá la aplicación de mapas de su dispositivo</li>
-            <li>Estas aplicaciones tienen sus propias políticas de privacidad</li>
-        </ul>
-
-        <h3>7.2 No Vendemos Datos</h3>
-        <p>NearPharma <span class="highlight"><strong>NUNCA</strong></span> vende, alquila o comparte sus datos personales con terceros con fines comerciales o publicitarios.</p>
-
-        <h2>8. Privacidad de Menores</h2>
-        <p>NearPharma no está dirigida a menores de 13 años y no recopilamos intencionalmente información personal de menores. Si es padre o tutor y cree que su hijo nos ha proporcionado información personal, contáctenos para eliminarla.</p>
-
-        <h2>9. Sus Derechos</h2>
-        <p>Usted tiene derecho a:</p>
-        <ul>
-            <li><strong>Revocar permisos:</strong> Puede desactivar el acceso a la ubicación en cualquier momento desde la configuración de su dispositivo</li>
-            <li><strong>Eliminar datos locales:</strong> Puede borrar el caché de la aplicación o desinstalarla para eliminar todos los datos almacenados localmente</li>
-            <li><strong>Solicitar información:</strong> Puede contactarnos para cualquier pregunta sobre sus datos</li>
-        </ul>
-
-        <h2>10. Cookies y Tecnologías de Seguimiento</h2>
-        <p>NearPharma <span class="highlight"><strong>NO</strong></span> utiliza:</p>
-        <ul>
-            <li>Cookies</li>
-            <li>Píxeles de seguimiento</li>
-            <li>Tecnologías de análisis de terceros</li>
-            <li>Herramientas de publicidad</li>
-        </ul>
-
-        <h2>11. Cambios a esta Política de Privacidad</h2>
-        <p>Podemos actualizar nuestra política de privacidad ocasionalmente. Le notificaremos cualquier cambio publicando la nueva política en esta página y actualizando la fecha de "Última actualización".</p>
-        <p>Se le recomienda revisar esta política periódicamente para estar informado de cualquier cambio.</p>
-
-        <h2>12. Legislación Aplicable</h2>
-        <p>Esta política de privacidad se rige por las leyes de Chile, incluyendo:</p>
-        <ul>
-            <li>Ley N° 19.628 sobre Protección de la Vida Privada</li>
-            <li>Normativas aplicables de protección de datos personales</li>
-        </ul>
-
-        <div class="contact">
-            <h2>13. Contacto</h2>
-            <p>Si tiene preguntas sobre esta política de privacidad o sobre nuestras prácticas de datos, puede contactarnos:</p>
+    <!-- Header -->
+    <header>
+        <nav>
+            <div class="logo">
+                <img src="images/ic_launcher_512.png" alt="NearPharma Logo">
+                <span>NearPharma</span>
+            </div>
             <ul>
-                <li><strong>Email:</strong> [TU_EMAIL_AQUÍ]</li>
-                <li><strong>Aplicación:</strong> NearPharma</li>
-                <li><strong>Desarrollador:</strong> NearPharma Development Team</li>
+                <li><a href="#inicio">Inicio</a></li>
+                <li><a href="#caracteristicas">Características</a></li>
+                <li><a href="#capturas">Capturas</a></li>
+                <li><a href="#contacto">Contacto</a></li>
+                <li><a href="privacy-policy.html">Privacidad</a></li>
             </ul>
+        </nav>
+    </header>
+
+    <!-- Hero Section -->
+    <section id="inicio" class="hero">
+        <div class="hero-content">
+            <h1>🏥 Encuentra Farmacias de Turno Cerca de Ti</h1>
+            <p>Información actualizada en tiempo real del Ministerio de Salud de Chile (MINSAL). Encuentra farmacias de turno y urgencia en todo el país.</p>
+            <div class="hero-buttons">
+                <a href="#" class="btn btn-primary">
+                    <span>📱</span> Descargar en Google Play
+                </a>
+                <a href="#caracteristicas" class="btn btn-secondary">
+                    <span>🔍</span> Ver Características
+                </a>
+            </div>
         </div>
-    </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="caracteristicas" class="features">
+        <div class="container">
+            <h2 class="section-title">¿Por qué elegir NearPharma?</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">📍</div>
+                    <h3>Encuentra Cerca</h3>
+                    <p>Localiza automáticamente las farmacias más cercanas a tu ubicación con tecnología GPS precisa.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🕐</div>
+                    <h3>Información en Tiempo Real</h3>
+                    <p>Datos actualizados directamente desde la API oficial del MINSAL. Turnos y horarios al día.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🗺️</div>
+                    <h3>Navegación Integrada</h3>
+                    <p>Dirígete a la farmacia seleccionada con un solo toque usando tu aplicación de mapas favorita.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3>Tu Privacidad Primero</h3>
+                    <p>No recopilamos datos personales. Tu ubicación se procesa localmente en tu dispositivo.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🏥</div>
+                    <h3>Farmacias de Turno</h3>
+                    <p>Encuentra fácilmente farmacias abiertas en horarios especiales y fines de semana.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🚀</div>
+                    <h3>Rápida y Eficiente</h3>
+                    <p>Interfaz simple y intuitiva. Encuentra lo que necesitas en segundos.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Screenshots Section -->
+    <section id="capturas" class="screenshots">
+        <div class="container">
+            <h2 class="section-title">Capturas de Pantalla</h2>
+            <div class="screenshots-slider">
+                <div class="screenshot-item">
+                    <img src="images/1_screen.jpeg" alt="Pantalla principal de NearPharma">
+                </div>
+                <div class="screenshot-item">
+                    <img src="images/2_screen.jpeg" alt="Búsqueda de farmacias">
+                </div>
+                <div class="screenshot-item">
+                    <img src="images/3_screen.jpeg" alt="Lista de farmacias cercanas">
+                </div>
+                <div class="screenshot-item">
+                    <img src="images/4_screen.jpeg" alt="Detalle de farmacia">
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Contact Section -->
+    <section id="contacto" class="contact">
+        <div class="container">
+            <h2 class="section-title">Contáctanos</h2>
+            <div class="contact-content">
+                <div id="successMessage" class="success-message">
+                    ✅ ¡Mensaje enviado con éxito! Te responderemos pronto.
+                </div>
+                <form id="contactForm" class="contact-form">
+                    <div class="form-group">
+                        <label for="name">Nombre *</label>
+                        <input type="text" id="name" name="name" required placeholder="Tu nombre">
+                    </div>
+                    <div class="form-group">
+                        <label for="email">Email *</label>
+                        <input type="email" id="email" name="email" required placeholder="tu@email.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="subject">Asunto *</label>
+                        <input type="text" id="subject" name="subject" required placeholder="¿En qué podemos ayudarte?">
+                    </div>
+                    <div class="form-group">
+                        <label for="message">Mensaje *</label>
+                        <textarea id="message" name="message" required placeholder="Escribe tu mensaje aquí..."></textarea>
+                    </div>
+                    <button type="submit" class="submit-btn">Enviar Mensaje</button>
+                </form>
+
+                <div class="contact-info">
+                    <h3>📧 Información de Contacto</h3>
+                    <p><strong>Email:</strong> <a href="mailto:nearpharma.app@gmail.com">nearpharma.app@gmail.com</a></p>
+                    <p><strong>Respuesta:</strong> Dentro de 24-48 horas</p>
+                    <p><strong>Horario:</strong> Lunes a Viernes, 9:00 - 18:00 CLT</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <div class="footer-links">
+                <a href="privacy-policy.html">Política de Privacidad</a>
+                <a href="https://github.com/mvpsdvlpr/NearPharma" target="_blank">GitHub</a>
+                <a href="mailto:nearpharma.app@gmail.com">Contacto</a>
+            </div>
+            <p>&copy; 2025 NearPharma. Todos los derechos reservados.</p>
+            <p style="margin-top: 10px; font-size: 14px; opacity: 0.8;">
+                Datos proporcionados por MINSAL Chile - Ministerio de Salud
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        // Form submission handler
+        document.getElementById('contactForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            // Get form data
+            const formData = {
+                name: document.getElementById('name').value,
+                email: document.getElementById('email').value,
+                subject: document.getElementById('subject').value,
+                message: document.getElementById('message').value
+            };
+
+            // Create mailto link
+            const mailtoLink = `mailto:nearpharma.app@gmail.com?subject=${encodeURIComponent(formData.subject)}&body=${encodeURIComponent(
+                `Nombre: ${formData.name}\n` +
+                `Email: ${formData.email}\n\n` +
+                `Mensaje:\n${formData.message}`
+            )}`;
+
+            // Open email client
+            window.location.href = mailtoLink;
+
+            // Show success message
+            const successMessage = document.getElementById('successMessage');
+            successMessage.classList.add('show');
+
+            // Reset form
+            this.reset();
+
+            // Hide success message after 5 seconds
+            setTimeout(() => {
+                successMessage.classList.remove('show');
+            }, 5000);
+        });
+
+        // Smooth scrolling for navigation links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+    </script>
 </body>
 </html>
