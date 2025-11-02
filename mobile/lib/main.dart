@@ -70,16 +70,9 @@ class TipoFarmaciaScreen extends StatefulWidget {
 }
 
 class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
-  List<dynamic> tipos = [];
-  List<String> iconosTipos = [];
-  List<String> titulosTipos = [];
-  int? tipoSeleccionado;
+  // tipos and filtro removed - app now always searches for 'turnos' and 'urgencia' combined
   List<dynamic> fechas = [];
   String? fechaSeleccionada;
-  // Global filter selection: 'turnos' (default) or 'urgencia'. This controls the
-  // value sent in the form body as 'filtro'. Kept separate from `tipoSeleccionado`
-  // which maps to icon/tipo metadata loaded from the server.
-  String filtroSeleccionado = 'turnos';
   List<dynamic> regiones = [];
   String? regionSeleccionada;
   List<dynamic> comunas = [];
@@ -88,32 +81,7 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
   Position? currentPosition;
   Map<String, String> regionesMap = {};
   Map<String, String> comunasMap = {};
-  // Fallback metadata mapping for known tipo icon ids from the web UI
-  final Map<String, Map<String, String>> _tipoMetadata = {
-    'turnos': {
-      'nombre': 'Farmacia de Turno / Urgencia',
-      'descripcion': 'Apertura obligatoria para asegurar disponibilidad de medicamentos en horarios fijados por la autoridad sanitaria. Incluye también farmacias de urgencia (atención 24h).'
-    },
-    'urgencia': {
-      'nombre': 'Urgencia',
-    },
-    'movil': {
-      'nombre': 'Farmacia Móvil',
-    },
-    'popular': {
-      'nombre': 'Farmacia Municipal',
-    },
-    'privado': {
-      'nombre': 'Farmacia Privada',
-    },
-    'todos': {
-      'nombre': 'Todas las farmacias',
-      'descripcion': ''
-    },
-    'almacen': {
-      'nombre': 'Almacén Farmacéutico'
-    },
-  };
+  // Tipo metadata removed - app now only uses 'turnos'
   bool cargando = true;
   String? error;
   DateTime _deviceTime = DateTime.now();
@@ -141,31 +109,7 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
     super.dispose();
   }
 
-  // Load global comunas map used for lookups (equivalent to map.js initial comunas call)
-  Future<void> _loadAllComunas() async {
-    try {
-    final resp = await _postForm({'func': 'comunas'});
-      if (resp.statusCode == 200) {
-        final data = json.decode(resp.body);
-        if (data is Map && data['respuesta'] != null && data['respuesta'] is List) {
-          final list = data['respuesta'] as List<dynamic>;
-          final map = <String, String>{};
-          for (final c in list) {
-            try {
-              map[c['id'].toString()] = c['nombre'].toString();
-            } catch (e, st) {
-              AppLogger.d('parse comuna entry failed in _loadAllComunas', e, st);
-            }
-          }
-          setState(() {
-            comunasMap = map;
-          });
-        }
-      }
-    } catch (e, st) {
-      AppLogger.d('_loadTipos error', e, st);
-    }
-  }
+  // _loadAllComunas removed - comunas solo se cargan por región
 
   Future<String> _apiBase() async {
     await dotenv.load();
@@ -193,8 +137,13 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       error = null;
     });
     try {
-      // load iconos (tipos), regiones, comunas (global) and fechas similar to web init
-      await Future.wait([_loadTipos(), _loadRegiones(), _loadAllComunas(), _loadFechas()]);
+      // ORDEN CORRECTO:
+      // 1. Cargar iconos (confirmación de tipo turnos)
+      // 2. Cargar fechas de turno
+      // 3. Las regiones se cargan cuando el usuario selecciona fecha
+      // 4. Las comunas se cargan cuando el usuario selecciona región
+      await _loadIconos();
+      await _loadFechas();
     } catch (e) {
       setState(() {
         error = e.toString();
@@ -206,47 +155,23 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
     }
   }
 
-  Future<void> _loadTipos() async {
+  Future<void> _loadIconos() async {
     try {
       final resp = await _postForm({'func': 'iconos'});
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
-        List<dynamic> tiposList = [];
-        List<dynamic> titulos = [];
-        List<dynamic> iconos = [];
-        if (data is Map) {
-          if (data['respuesta'] != null && data['respuesta']['titulos'] != null && data['respuesta']['iconos'] != null) {
-            titulos = List<dynamic>.from(data['respuesta']['titulos']);
-            iconos = List<dynamic>.from(data['respuesta']['iconos']);
-          } else if (data['titulos'] != null && data['iconos'] != null) {
-            titulos = List<dynamic>.from(data['titulos']);
-            iconos = List<dynamic>.from(data['iconos']);
-          }
+        // V2 response: [{"id": "1", "name": "Turno", "icon": "turnos"}, ...]
+        // Direct array response (no 'respuesta' wrapper)
+        if (data is List) {
+          AppLogger.d('Iconos cargados correctamente: ${data.length} tipos');
+        } else {
+          AppLogger.d('Iconos response format inesperado');
         }
-        if (titulos.isNotEmpty && iconos.isNotEmpty) {
-          iconosTipos = iconos.map((e) => e.toString()).toList();
-          titulosTipos = titulos.map((e) => e.toString()).toList();
-          for (int i = 0; i < titulos.length && i < iconos.length; i++) {
-            final id = iconos[i].toString();
-            // prefer server title, but fallback to metadata nombre if present
-            String nombre = titulos[i].toString();
-            if (nombre.isEmpty && _tipoMetadata.containsKey(id)) {
-              nombre = _tipoMetadata[id]!['nombre'] ?? id;
-            }
-            String descripcion = '';
-            if (_tipoMetadata.containsKey(id)) descripcion = _tipoMetadata[id]!['descripcion'] ?? '';
-            tiposList.add({'id': id, 'nombre': nombre.toString(), 'descripcion': descripcion});
-          }
-        }
-        setState(() {
-          // Restrict available tipos to only 'turnos' per reconfiguration
-          tipos = tiposList.where((t) => (t['id']?.toString() ?? '') == 'turnos').toList();
-          tipoSeleccionado = tipos.isNotEmpty ? 0 : null;
-        });
       } else {
         throw Exception('Error iconos: ${resp.statusCode}');
       }
-    } catch (e) {
+    } catch (e, st) {
+      AppLogger.d('_loadIconos error', e, st);
       setState(() {
         error = e.toString();
       });
@@ -255,54 +180,19 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
 
   Future<void> _loadComunas(String regionId) async {
     try {
-      // Try requesting comunas filtered by region first (more efficient)
+      // POST /api/v2/regions/{regionId}/communes
       final resp = await _postForm({'func': 'comunas', 'region': regionId});
       List<dynamic> comunasList = [];
-      bool ok = false;
+      
       if (resp.statusCode == 200) {
-        try {
-          final data = json.decode(resp.body);
-          if (data is Map && data['respuesta'] != null && data['respuesta'] is List) {
-            comunasList = data['respuesta'];
-            ok = true;
-          } else if (data is List) {
-            comunasList = data;
-            ok = true;
-          }
-        } catch (_) {
-          // parsing failed, fall through to fallback
-          ok = false;
+        final data = json.decode(resp.body);
+        // V2 response: [{"id": "123", "nombre": "Santiago", ...}, ...]
+        // Direct array response (no 'respuesta' wrapper)
+        if (data is List) {
+          comunasList = data;
         }
-      }
-
-      if (!ok) {
-        // Fallback: request global comunas and then filter by regionId if possible
-        try {
-          final allResp = await _postForm({'func': 'comunas'});
-          if (allResp.statusCode == 200) {
-            final raw = json.decode(allResp.body);
-            List<dynamic> allList = [];
-            if (raw is Map && raw['respuesta'] != null && raw['respuesta'] is List) {
-              allList = raw['respuesta'];
-            } else if (raw is List) {
-              allList = raw;
-            }
-            // If items contain a region id field, try to filter; otherwise keep all
-            try {
-              comunasList = allList.where((c) {
-                try {
-                  final r = c['region'] ?? c['region_id'] ?? c['regionId'];
-                  if (r == null) return true; // no region info -> keep
-                  return r.toString() == regionId.toString();
-                } catch (_) {
-                  return true;
-                }
-              }).toList();
-            } catch (_) {
-              comunasList = allList;
-            }
-          }
-        } catch (_) {}
+      } else {
+        throw Exception('Error comunas: ${resp.statusCode}');
       }
 
       setState(() {
@@ -317,7 +207,8 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
         // Do not preselect a comuna; user must choose
         comunaSeleccionada = null;
       });
-    } catch (e) {
+    } catch (e, st) {
+      AppLogger.d('_loadComunas error', e, st);
       setState(() {
         error = e.toString();
       });
@@ -335,98 +226,64 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       if (currentPosition == null) {
         await _ensureLocation();
       }
-        final tipo = (filtroSeleccionado == 'turnos' ? 'turnos' : (tipoSeleccionado != null ? tipos[tipoSeleccionado!]['id'] : ''));
-    // Build body map similar to web: func=region, filtro, fecha (if turnos), region, hora
+    // Always query both 'turnos' and 'urgencia' and merge results (avoid duplicates by 'im')
     final hora = _horaActual();
-
     List<dynamic> farmaciasList = [];
-    if (tipo == 'turnos') {
-      // Query both 'turnos' and 'urgencia' and merge results (avoid duplicates by 'im')
-      final bodies = <Map<String, String>>[];
-      final b1 = {'func': 'region', 'filtro': 'turnos', 'region': regionSeleccionada ?? '', 'hora': hora};
-      final b2 = {'func': 'region', 'filtro': 'urgencia', 'region': regionSeleccionada ?? '', 'hora': hora};
-      // Note: Coordinates are not sent to backend, following MVP pattern where location handling is frontend-only
-      if (fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty) {
-        b1['fecha'] = fechaSeleccionada!;
-        b2['fecha'] = fechaSeleccionada!;
-      }
-      bodies.add(b1);
-      bodies.add(b2);
+    
+    final bodies = <Map<String, String>>[];
+    final b1 = {'func': 'region', 'filtro': 'turnos', 'region': regionSeleccionada ?? '', 'hora': hora};
+    final b2 = {'func': 'region', 'filtro': 'urgencia', 'region': regionSeleccionada ?? '', 'hora': hora};
+    
+    // Add fecha to both requests
+    if (fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty) {
+      b1['fecha'] = fechaSeleccionada!;
+      b2['fecha'] = fechaSeleccionada!;
+    }
+    bodies.add(b1);
+    bodies.add(b2);
 
-      final responses = await Future.wait(bodies.map((b) => _postForm(b)));
-      final seen = <String>{};
-      for (final resp in responses) {
-        if (resp.statusCode != 200) continue;
-        try {
-          final data = json.decode(resp.body);
-          if (data is Map && data['respuesta'] != null && data['respuesta']['locales'] != null) {
-            final locals = List<dynamic>.from(data['respuesta']['locales']);
-            for (final l in locals) {
-              try {
-                final id = l['im']?.toString() ?? l['id']?.toString() ?? json.encode(l);
-                if (!seen.contains(id)) {
-                  seen.add(id);
-                  farmaciasList.add(l);
-                }
-              } catch (e, st) {
-                AppLogger.d('failed to extract id for local entry', e, st);
+    final responses = await Future.wait(bodies.map((b) => _postForm(b)));
+    final seen = <String>{};
+    for (final resp in responses) {
+      if (resp.statusCode != 200) continue;
+      try {
+        final data = json.decode(resp.body);
+        // V2 response: Direct array [{"id": "...", "nombre": "...", ...}, ...]
+        // No 'respuesta' wrapper
+        if (data is List) {
+          final locals = List<dynamic>.from(data);
+          for (final l in locals) {
+            try {
+              final id = l['id']?.toString() ?? l['im']?.toString() ?? json.encode(l);
+              if (!seen.contains(id)) {
+                seen.add(id);
+                farmaciasList.add(l);
               }
+            } catch (e, st) {
+              AppLogger.d('failed to extract id for local entry', e, st);
             }
           }
-        } catch (e, st) {
-          AppLogger.d('failed to parse region response for locales', e, st);
         }
-      }
-    } else {
-      final bodyMap = <String, String>{'func': 'region', 'filtro': tipo, 'region': regionSeleccionada ?? '', 'hora': hora};
-      if (tipo == 'turnos' && fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty) {
-        bodyMap['fecha'] = fechaSeleccionada!;
-      }
-      // Note: Coordinates are not sent to backend, following MVP pattern where location handling is frontend-only
-      final resp = await _postForm(bodyMap);
-      if (resp.statusCode == 200) {
-        final data = json.decode(resp.body);
-  // Debug: print raw region response
-  // Log region response preview via AppLogger
-  try {
-    final preview = resp.body.length > 1000 ? resp.body.substring(0, 1000) + '...[truncated]' : resp.body;
-    AppLogger.d('region response preview: $preview');
-  } catch (e, st) {
-    AppLogger.d('region response preview failed to build', e, st);
-  }
-        if (data is Map && data['respuesta'] != null && data['respuesta']['locales'] != null) {
-          farmaciasList = List<dynamic>.from(data['respuesta']['locales']);
-        }
+      } catch (e, st) {
+        AppLogger.d('failed to parse region response for locales', e, st);
       }
     }
 
     if (farmaciasList.isEmpty) {
-      // Attempt fallbacks: try without filtro and then with 'todos' to increase chance of data
-      final tried = <String>{};
-      final fallbackFilters = ['', 'todos'];
-      for (final alt in fallbackFilters) {
-        if (tried.contains(alt)) continue;
-        tried.add(alt);
-        try {
-          final b = {'func': 'region', 'filtro': alt, 'region': regionSeleccionada ?? '', 'hora': hora};
-          if (fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty) b['fecha'] = fechaSeleccionada!;
-          // Note: Coordinates are not sent to backend, following MVP pattern where location handling is frontend-only
-          final resp = await _postForm(b);
-          if (resp.statusCode != 200) continue;
+      // Attempt fallback without filtro
+      try {
+        final b = {'func': 'region', 'filtro': 'turno', 'region': regionSeleccionada ?? '', 'hora': hora};
+        if (fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty) b['fecha'] = fechaSeleccionada!;
+        final resp = await _postForm(b);
+        if (resp.statusCode == 200) {
           final data = json.decode(resp.body);
-          if (data is Map && data['respuesta'] != null && data['respuesta']['locales'] != null) {
-            farmaciasList = List<dynamic>.from(data['respuesta']['locales']);
-            if (farmaciasList.isNotEmpty) break;
-          } else if (data is Map && data['respuesta'] != null && data['respuesta'] is List) {
-            farmaciasList = List<dynamic>.from(data['respuesta']);
-            if (farmaciasList.isNotEmpty) break;
-          } else if (data is List) {
+          // V2 response: Direct array
+          if (data is List) {
             farmaciasList = List<dynamic>.from(data);
-            if (farmaciasList.isNotEmpty) break;
           }
-        } catch (e, st) {
-          AppLogger.d('fallback region request failed for filter $alt', e, st);
         }
+      } catch (e, st) {
+        AppLogger.d('fallback region request failed', e, st);
       }
 
       if (farmaciasList.isEmpty) {
@@ -557,14 +414,17 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
 
   // Load regiones (similar to web func=regiones)
   Future<void> _loadRegiones() async {
+    setState(() {
+      cargando = true;
+    });
     try {
       final resp = await _postForm({'func': 'regiones'});
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
         List<dynamic> regionesList = [];
-        if (data is Map && data['respuesta'] != null && data['respuesta'] is List) {
-          regionesList = data['respuesta'];
-        } else if (data is List) {
+        // V2 response: [{"id": "1", "nombre": "Tarapacá", ...}, ...]
+        // Direct array response (no 'respuesta' wrapper)
+        if (data is List) {
           regionesList = data;
         }
         final map = <String, String>{};
@@ -579,37 +439,56 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
           regiones = regionesList;
           regionesMap = map;
         });
+      } else {
+        throw Exception('Error regiones: ${resp.statusCode}');
       }
     } catch (e, st) {
-      AppLogger.d('_loadRegiones top-level catch', e, st);
+      AppLogger.d('_loadRegiones error', e, st);
+      setState(() {
+        error = e.toString();
+      });
+    } finally {
+      setState(() {
+        cargando = false;
+      });
     }
   }
 
-  // Load fechas (func=fechas) and convert map to list of {id,label}
+  // Load fechas (func=fechas) - DEBE venir del backend con solo 3 fechas
   Future<void> _loadFechas() async {
+    setState(() {
+      cargando = true;
+    });
     try {
       final resp = await _postForm({'func': 'fechas'});
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
         List<dynamic> out = [];
-        if (data is Map && data['respuesta'] != null) {
-          final raw = data['respuesta'];
-          if (raw is Map) {
-            raw.forEach((k, v) {
-              try {
-                out.add({'id': k.toString(), 'label': v.toString()});
-              } catch (_) {}
-            });
-          } else if (raw is List) {
-            out = List<dynamic>.from(raw);
-          }
+        // V2 response: {"2025-11-01": "Sábado 01 de Noviembre", ...}
+        // Direct object response (no 'respuesta' wrapper)
+        if (data is Map) {
+          // Convertir mapa de fechas a lista
+          data.forEach((k, v) {
+            try {
+              out.add({'id': k.toString(), 'label': v.toString()});
+            } catch (_) {}
+          });
         }
         setState(() {
           fechas = out;
         });
+      } else {
+        throw Exception('Error fechas: ${resp.statusCode}');
       }
     } catch (e, st) {
-      AppLogger.d('_loadFechas top-level catch', e, st);
+      AppLogger.d('_loadFechas error', e, st);
+      setState(() {
+        error = e.toString();
+      });
+    } finally {
+      setState(() {
+        cargando = false;
+      });
     }
   }
 
@@ -673,49 +552,61 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
   }
 
   Future<Map<String, dynamic>> _fetchLocalDetail(dynamic local) async {
-    // local is the item from respuesta.locales; call func=local with at least im and fecha if needed
+    // V2: POST /api/v2/pharmacies/search with pharmacyId
     try {
-      // Build body by sending the whole lc object like the web does (map.js: lc.func='local'; lc.fecha=fecha)
       final body = <String, String>{};
+      
+      // Extract pharmacy ID from local object
+      String pharmacyId = '';
       if (local is Map) {
+        pharmacyId = (local['id'] ?? local['im'])?.toString() ?? '';
+        // Copy all fields to body for backward compatibility
         local.forEach((k, v) {
           try {
             body[k.toString()] = v?.toString() ?? '';
           } catch (_) {}
         });
       } else {
-        // fallback: if local is a primitive, send it as im
-        body['im'] = local?.toString() ?? '';
+        pharmacyId = local?.toString() ?? '';
       }
-      // ensure func and fecha when applicable
+      
       body['func'] = 'local';
-      // Use the global filtro selection to decide whether to include fecha for local details.
-      if (filtroSeleccionado == 'turnos' && fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty) {
+      body['im'] = pharmacyId;
+      
+      // Always include fecha when available
+      if (fechaSeleccionada != null && fechaSeleccionada!.isNotEmpty) {
         body['fecha'] = fechaSeleccionada!;
       }
-      // include lat/lng if present (map.js sends the whole lc object but im is enough for server)
+      
       final resp = await _postForm(body);
       if (resp.statusCode == 200) {
-        // Debug: print raw local response
-        debugPrint('DEBUG local(${body['im'] ?? 'no-im'}) response: ${resp.body}');
+        debugPrint('DEBUG local($pharmacyId) response: ${resp.body}');
         final data = json.decode(resp.body);
-        if (data is Map && data['respuesta'] != null) {
-          final localResp = data['respuesta']['local'];
-          final horario = data['respuesta']['horario'];
-          // return combined map
-          return {'f': localResp ?? local, 'horario': horario ?? {}, 'raw': local};
+        
+        // V2 response format: Direct object or array
+        // Check if it's a single pharmacy object
+        if (data is Map) {
+          // Single pharmacy detail returned
+          final horario = data['horario'] ?? data['schedule'] ?? {};
+          return {'f': data, 'horario': horario, 'raw': local};
+        } else if (data is List && data.isNotEmpty) {
+          // Array returned, take first item
+          final item = data.first;
+          final horario = item['horario'] ?? item['schedule'] ?? {};
+          return {'f': item, 'horario': horario, 'raw': local};
         }
       }
-    } catch (_) {}
+    } catch (e, st) {
+      AppLogger.d('_fetchLocalDetail error', e, st);
+    }
     // fallback: return original local without detalle
     return {'f': local, 'horario': {}, 'raw': local};
   }
 
   bool _inputsSuficientes() {
-    // tipo and region and comuna are required; if tipo == 'turnos' also require fecha
-    if (tipoSeleccionado == null) return false;
+    // region, comuna and fecha are required (tipo is now always 'turnos')
     if (regionSeleccionada == null || comunaSeleccionada == null) return false;
-  if (filtroSeleccionado == 'turnos' && (fechaSeleccionada == null || fechaSeleccionada!.isEmpty)) return false;
+    if (fechaSeleccionada == null || fechaSeleccionada!.isEmpty) return false;
     return true;
   }
 
@@ -726,34 +617,6 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
   }
 
   // Pill derivation moved to `lib/utils/pill.dart` to make it testable.
-
-  // Build a styled filter button that visually matches the PharmacyCard's
-  // ElevatedButton.icon used for the "¿Cómo llegar?" action. The selected
-  // button appears filled; the unselected one is outlined.
-  Widget _buildFilterButton(String id, IconData icon, String label) {
-    final selected = filtroSeleccionado == id;
-    return Builder(builder: (context) {
-      final onPressed = () {
-        setState(() {
-          filtroSeleccionado = id;
-          // Clear dependent filters when switching
-          fechaSeleccionada = null;
-          regionSeleccionada = null;
-          comunaSeleccionada = null;
-          comunas = [];
-          farmacias = [];
-          error = null;
-        });
-        WidgetsBinding.instance.addPostFrameCallback((_) => _maybeBuscar());
-      };
-
-      const pad = EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0);
-      if (selected) {
-        return ElevatedButton.icon(onPressed: onPressed, icon: Icon(icon, size: 18), label: Text(label), style: ElevatedButton.styleFrom(padding: pad));
-      }
-      return OutlinedButton.icon(onPressed: onPressed, icon: Icon(icon, size: 18), label: Text(label), style: OutlinedButton.styleFrom(padding: pad));
-    });
-  }
 
   // Public wrapper for tests to trigger filter loading when autoInit is false
   Future<void> loadFiltros() async {
@@ -766,54 +629,11 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
     await _loadComunas(regionId);
   }
 
-  /// Busca por tipo usando la misma semántica que la función `buscar(tipo)` en mapa.php.
-  /// Ejemplo de uso: `buscar('todos')`, `buscar('turno')`, `buscar('movil')`.
-  /// Normaliza y mapea sinónimos (por ejemplo 'turno' -> 'turnos', 'todo' -> 'todos', 'almacén' -> 'almacen').
-  /// Selecciona el tipo en la UI, carga las fechas si corresponde, limpia la comuna y dispara la búsqueda automática.
+  /// Simplified buscar() - tipo is no longer selectable, always searches turnos
+  /// Loads fechas if needed, clears comuna, and triggers automatic search.
   Future<void> buscar(String tipo) async {
-    // normalize input: trim, lowercase, strip common diacritics
-    String norm(String s) {
-      var t = s.trim().toLowerCase();
-      t = t.replaceAll('á', 'a').replaceAll('é', 'e').replaceAll('í', 'i').replaceAll('ó', 'o').replaceAll('ú', 'u').replaceAll('ü', 'u').replaceAll('ñ', 'n');
-      return t;
-    }
-
-    final aliases = <String, String>{
-      'turno': 'turnos',
-      'turnos': 'turnos',
-      'urgencia': 'urgencia',
-      'urgencias': 'urgencia',
-  'movil': 'movil',
-      'popular': 'popular',
-      'privado': 'privado',
-      'todo': 'todos',
-      'todos': 'todos',
-      'almacen': 'almacen',
-      'almacén': 'almacen',
-    };
-
-  final key = norm(tipo);
-    final mapped = aliases[key] ?? key;
-
-    // Ensure tipos are loaded
-    if (tipos.isEmpty) {
-      await _loadTipos();
-    }
-
-    // Find index in tipos by id
-    int idx = tipos.indexWhere((t) => (t['id']?.toString() ?? '') == mapped);
-    if (idx < 0) {
-      // If not found, try matching by nombre (fallback)
-      idx = tipos.indexWhere((t) => (t['nombre']?.toString().toLowerCase() ?? '') == mapped);
-    }
-
+    // App now only supports 'turnos' - ignore tipo parameter
     setState(() {
-      if (idx >= 0) {
-        tipoSeleccionado = idx;
-      } else {
-        // no match: clear selection
-        tipoSeleccionado = null;
-      }
       // limpiarComuna = 0 equivalent: clear comuna selection and list
       comunaSeleccionada = null;
       comunas = [];
@@ -822,30 +642,25 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
       error = null;
     });
 
-    // If selecting turnos, ensure fechas are loaded and a sensible fecha is chosen
-    if (mapped == 'turnos') {
-      await _loadFechas();
-      if ((fechaSeleccionada == null || fechaSeleccionada == '0') && fechas.isNotEmpty) {
-        // pick the first available fecha (skip placeholder '0' if present)
-        String pick = '';
-        for (final f in fechas) {
-          try {
-            final id = f is Map && f['id'] != null ? f['id'].toString() : f.toString();
-            if (id != '0') { pick = id; break; }
-          } catch (_) {}
-        }
-        if (pick.isEmpty) {
-          final f = fechas.first;
-          pick = f is Map && f['id'] != null ? f['id'].toString() : f.toString();
-        }
-        setState(() { fechaSeleccionada = pick; });
+    // Ensure fechas are loaded and a sensible fecha is chosen
+    await _loadFechas();
+    if ((fechaSeleccionada == null || fechaSeleccionada == '0') && fechas.isNotEmpty) {
+      // pick the first available fecha (skip placeholder '0' if present)
+      String pick = '';
+      for (final f in fechas) {
+        try {
+          final id = f is Map && f['id'] != null ? f['id'].toString() : f.toString();
+          if (id != '0') { pick = id; break; }
+        } catch (_) {}
       }
-    } else {
-      // hide fecha: clear selection
-      setState(() { fechaSeleccionada = null; });
+      if (pick.isEmpty) {
+        final f = fechas.first;
+        pick = f is Map && f['id'] != null ? f['id'].toString() : f.toString();
+      }
+      setState(() { fechaSeleccionada = pick; });
     }
 
-    // Reload regiones (web code reloads regiones after tipo change)
+    // Reload regiones
     await _loadRegiones();
 
     // Trigger search if inputs are sufficient
@@ -854,9 +669,8 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
 
   // Public helper for tests: set selections and directly trigger the search.
   // This avoids interacting with dropdown overlays in widget tests and speeds them up.
-  Future<void> buscarFarmaciasPublic({int? tipoIndex, String? regionId, String? comunaId, String? fechaId}) async {
+  Future<void> buscarFarmaciasPublic({String? regionId, String? comunaId, String? fechaId}) async {
     setState(() {
-      tipoSeleccionado = tipoIndex;
       regionSeleccionada = regionId;
       comunaSeleccionada = comunaId;
       fechaSeleccionada = fechaId;
@@ -1096,22 +910,9 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
                     : SingleChildScrollView(
                         padding: const EdgeInsets.all(16.0),
                         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                    // Global filter toggle: Turno (default) or Urgencia. This controls
-                    // the 'filtro' sent to the backend. Placed above the other filters.
+                    // Filter buttons removed - app now only shows 'turnos' pharmacies
                     Padding(
                       padding: const EdgeInsets.only(top: 8.0),
-                      child: Row(children: [
-                        const Text('Farmacia:',style: TextStyle(fontWeight: FontWeight.w600)),
-                        const SizedBox(width: 12),
-                        Row(children: [
-                          _buildFilterButton('turnos', Icons.calendar_today, 'Turno'),
-                          const SizedBox(width: 8),
-                          _buildFilterButton('urgencia', Icons.local_hospital, 'Urgencia'),
-                        ]),
-                      ]),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 16.0),
                       child: fechas.isEmpty
                             ? const Center(child: CircularProgressIndicator())
               : DropdownButtonFormField<String>(
@@ -1125,8 +926,22 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
                                   final label = f is String ? f : f.toString();
                                   return DropdownMenuItem(value: label, child: Text(label));
                                 }).toList(),
-                                // After choosing fecha, set and try search
-                                onChanged: (v) { setState(() { fechaSeleccionada = v; }); WidgetsBinding.instance.addPostFrameCallback((_) => _maybeBuscar()); },
+                                // After choosing fecha, load regiones
+                                onChanged: (v) { 
+                                  setState(() { 
+                                    fechaSeleccionada = v;
+                                    // Clear dependent selections
+                                    regionSeleccionada = null;
+                                    comunaSeleccionada = null;
+                                    regiones = [];
+                                    comunas = [];
+                                    farmacias = [];
+                                  });
+                                  // Load regiones after fecha is selected
+                                  if (v != null && v.isNotEmpty) {
+                                    _loadRegiones();
+                                  }
+                                },
                                 decoration: const InputDecoration(labelText: 'Fecha de turno'),
                               ),
                     ),
@@ -1190,8 +1005,6 @@ class TipoFarmaciaScreenState extends State<TipoFarmaciaScreen> {
                               horario: horario,
                               comunasMap: comunasMap,
                               regionesMap: regionesMap,
-                              titulosTipos: titulosTipos,
-                              iconosTipos: iconosTipos,
                               disableNetworkImages: widget.disableNetworkImages,
                             );
                           },

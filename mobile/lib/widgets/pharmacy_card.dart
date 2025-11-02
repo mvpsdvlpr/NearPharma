@@ -280,8 +280,6 @@ class PharmacyCard extends StatelessWidget {
 	final Map<String, dynamic> horario;
 	final Map<String, String> comunasMap;
 	final Map<String, String> regionesMap;
-	final List<String> titulosTipos;
-	final List<String> iconosTipos;
 	final bool disableNetworkImages;
 
 	const PharmacyCard({
@@ -290,8 +288,6 @@ class PharmacyCard extends StatelessWidget {
 		required this.horario,
 		required this.comunasMap,
 		required this.regionesMap,
-		required this.titulosTipos,
-		required this.iconosTipos,
 		this.disableNetworkImages = false,
 	});
 
@@ -637,23 +633,12 @@ class PharmacyCard extends StatelessWidget {
 											return const SizedBox.shrink();
 										}),
 										
-										// 7. Pill (tipo de farmacia)
-										Builder(builder: (c) {
-											try {
-												// Attempt to get a readable tipoNombre from tp index
-												final tpRaw = f['tp']?.toString();
-												int? tpIdx;
-												if (tpRaw != null) tpIdx = int.tryParse(tpRaw);
-												String tipoNombre = '';
-												if (tpIdx != null && tpIdx >= 0 && tpIdx < titulosTipos.length) {
-													tipoNombre = titulosTipos[tpIdx];
-												}
-
-												// Use utility to derive pill text/color from maps. We pass
-												// `tipoNombre` as a hint; `filtroActual` is unknown here so
-												// we pass empty string — the util will still prioritize
-												// explicit server fields.
-												final pill = derivePillFromResponse(Map<String, dynamic>.from(f), Map<String, dynamic>.from(horario), false, tipoNombre, '');
+									// 7. Pill (tipo de farmacia)
+									Builder(builder: (c) {
+										try {
+											// Tipo selection removed - always show turnos
+											// Use utility to derive pill text/color from maps.
+											final pill = derivePillFromResponse(Map<String, dynamic>.from(f), Map<String, dynamic>.from(horario), false, 'Turno', '');
 												final pillText = (pill['text'] ?? '').toString();
 												final pillColor = pill['color'] as Color? ?? Colors.green.shade600;
 
