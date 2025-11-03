@@ -18,7 +18,7 @@
     "@types/morgan": "^1.9.10",
     "@types/node": "^24.8.1",
     "@types/node-fetch": "^2.6.13",
-    "axios": "^1.12.2",
+    "axios": "^1.13.1",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
